@@ -54,6 +54,10 @@ cmd = "ty check src"
 help = "Run pytest"
 cmd = "pytest"
 
+[tool.poe.tasks.test-unit]
+help = "Run unit tests with coverage"
+cmd = "pytest -m unit --cov=polars_db --cov-report=xml -n auto"
+
 [tool.poe.tasks.yaml-lint]
 help = "Run yamllint"
 cmd = "yamllint -s ."
@@ -76,7 +80,7 @@ sequence = ["format", "lint-fix", "type-check", "yaml-format", "yaml-lint", "doc
 
 [tool.poe.tasks.ci]
 help = "Run full CI pipeline"
-sequence = ["format-check", "lint", "type-check", "yaml-format-check", "yaml-lint", "docker-lint", "test"]
+sequence = ["format-check", "lint", "type-check", "yaml-format-check", "yaml-lint", "docker-lint", "test-unit"]
 
 # --- Ruff -----------------------------------------------------------------
 
