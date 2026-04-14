@@ -28,7 +28,10 @@ def _make_compiler(schema: dict[str, list[str]] | None = None) -> QueryCompiler:
 
 @pytest.mark.unit
 class TestResolveColumnsTableRef:
+    """Tests for column resolution from ``TableRef`` via schema lookup."""
+
     def test_table_ref(self) -> None:
+        """Verify columns are resolved from the mocked schema."""
         compiler = _make_compiler({"users": ["id", "name", "age"]})
         cols = compiler._resolve_columns(TableRef(name="users"))
         assert cols == ["id", "name", "age"]
@@ -36,7 +39,10 @@ class TestResolveColumnsTableRef:
 
 @pytest.mark.unit
 class TestResolveColumnsSelect:
+    """Tests for column resolution from ``SelectOp``."""
+
     def test_select(self) -> None:
+        """Verify column names extracted from ``ColExpr`` selections."""
         compiler = _make_compiler()
         op = SelectOp(
             child=TableRef(name="users"),
@@ -46,6 +52,7 @@ class TestResolveColumnsSelect:
         assert cols == ["name", "age"]
 
     def test_select_with_alias(self) -> None:
+        """Verify aliased column names are resolved correctly."""
         compiler = _make_compiler()
         op = SelectOp(
             child=TableRef(name="users"),
@@ -63,6 +70,7 @@ class TestResolveColumnsTransparent:
     """Ops that pass through child columns unchanged."""
 
     def test_filter(self) -> None:
+        """Verify ``FilterOp`` passes through child columns."""
         compiler = _make_compiler()
         inner = SelectOp(
             child=TableRef(name="users"),
@@ -73,6 +81,7 @@ class TestResolveColumnsTransparent:
         assert cols == ["name", "age"]
 
     def test_sort(self) -> None:
+        """Verify ``SortOp`` passes through child columns."""
         compiler = _make_compiler()
         inner = SelectOp(
             child=TableRef(name="users"),
@@ -83,6 +92,7 @@ class TestResolveColumnsTransparent:
         assert cols == ["name"]
 
     def test_limit(self) -> None:
+        """Verify ``LimitOp`` passes through child columns."""
         compiler = _make_compiler()
         inner = SelectOp(
             child=TableRef(name="users"),
