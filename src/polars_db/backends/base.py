@@ -76,7 +76,7 @@ class ConnectorxBackend(Backend):
     def execute_sql(self, sql: str, conn_str: str) -> pa.Table:
         import connectorx as cx
 
-        return cx.read_sql(conn=conn_str, query=sql, return_type="arrow2")
+        return cx.read_sql(conn=conn_str, query=sql, return_type="arrow")
 
 
 # Alias to avoid shadowing inside Backend methods

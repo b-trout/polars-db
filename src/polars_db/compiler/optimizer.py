@@ -41,13 +41,14 @@ class Optimizer:
 
             # Only collapse if the outer SELECT is `SELECT *` with no
             # additional clauses (no WHERE, GROUP BY, ORDER BY, etc.)
+            # Use .args to check direct clauses only, not recursive .find()
             outer_exprs = grandparent.expressions
             is_star = len(outer_exprs) == 1 and isinstance(outer_exprs[0], exp.Star)
-            has_where = grandparent.find(exp.Where) is not None
-            has_group = grandparent.find(exp.Group) is not None
-            has_order = grandparent.find(exp.Order) is not None
-            has_limit = grandparent.find(exp.Limit) is not None
-            has_join = grandparent.find(exp.Join) is not None
+            has_where = grandparent.args.get("where") is not None
+            has_group = grandparent.args.get("group") is not None
+            has_order = grandparent.args.get("order") is not None
+            has_limit = grandparent.args.get("limit") is not None
+            has_join = bool(grandparent.args.get("joins"))
 
             if is_star and not any(
                 [has_where, has_group, has_order, has_limit, has_join]
@@ -68,23 +69,26 @@ class Optimizer:
         if not isinstance(ast, exp.Select):
             return ast
 
-        outer_where = ast.find(exp.Where)
+        # Use args to get the direct WHERE clause, not find() which recurses
+        outer_where = ast.args.get("where")
         if outer_where is None:
             return ast
 
-        from_clause = ast.find(exp.From)
+        # sqlglot v30+ uses "from_" as the key
+        from_clause = ast.args.get("from") or ast.args.get("from_")
         if from_clause is None:
             return ast
 
-        subquery = from_clause.find(exp.Subquery)
-        if subquery is None:
+        # Check if FROM contains a subquery
+        from_this = from_clause.this
+        if not isinstance(from_this, exp.Subquery):
             return ast
 
-        inner = subquery.this
+        inner = from_this.this
         if not isinstance(inner, exp.Select):
             return ast
 
-        inner_where = inner.find(exp.Where)
+        inner_where = inner.args.get("where")
         if inner_where is None:
             return ast
 
