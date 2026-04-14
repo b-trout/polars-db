@@ -70,14 +70,5 @@ class Backend(ABC):
         )
 
 
-class ConnectorxBackend(Backend):
-    """Backend for databases supported by connectorx."""
-
-    def execute_sql(self, sql: str, conn_str: str) -> pa.Table:
-        import connectorx as cx
-
-        return cx.read_sql(conn=conn_str, query=sql, return_type="arrow")
-
-
 # Alias to avoid shadowing inside Backend methods
 builtins_str = str

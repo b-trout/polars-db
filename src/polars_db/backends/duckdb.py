@@ -1,8 +1,4 @@
-"""DuckDB backend using native duckdb driver.
-
-connectorx does not support DuckDB, so we use the duckdb package
-directly which provides native Arrow output.
-"""
+"""DuckDB backend using native duckdb driver."""
 
 from __future__ import annotations
 

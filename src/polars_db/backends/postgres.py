@@ -1,8 +1,4 @@
-"""PostgreSQL backend using native psycopg2 driver.
-
-connectorx only supports SELECT queries, so we use psycopg2 which
-handles DDL/DML statements and provides reliable Arrow conversion.
-"""
+"""PostgreSQL backend using native psycopg2 driver."""
 
 from __future__ import annotations
 
