@@ -11,9 +11,9 @@ import polars_db as pdb
 from tests.conftest import BACKEND_CONFIG
 
 _BACKEND = os.environ.get("POLARS_DB_TEST_BACKEND", "duckdb")
-_subquery_xfail = pytest.mark.xfail(
-    _BACKEND in ("mysql", "sqlserver"),
-    reason="MySQL/SQL Server require aliases on derived tables — SQL compiler limitation",
+_tsql_order_by_xfail = pytest.mark.xfail(
+    _BACKEND == "sqlserver",
+    reason="T-SQL forbids ORDER BY in subqueries without TOP/OFFSET",
 )
 
 
@@ -54,13 +54,12 @@ class TestBackendConnectivity:
         names = sorted(result["name"].to_list())
         assert names == ["Bob", "Charlie"]
 
-    @_subquery_xfail
     def test_select_columns(self, conn: pdb.Connection) -> None:
         result = conn.table(self.TABLE).select("name", "value").collect()
         assert set(result.columns) == {"name", "value"}
         assert len(result) == 3
 
-    @_subquery_xfail
+    @_tsql_order_by_xfail
     def test_sort(self, conn: pdb.Connection) -> None:
         result = (
             conn.table(self.TABLE)
@@ -70,7 +69,6 @@ class TestBackendConnectivity:
         )
         assert result["name"].to_list() == ["Charlie", "Bob", "Alice"]
 
-    @_subquery_xfail
     def test_group_by_agg(self, conn: pdb.Connection) -> None:
         result = (
             conn.table(self.TABLE)

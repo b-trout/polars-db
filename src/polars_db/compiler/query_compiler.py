@@ -35,6 +35,7 @@ class QueryCompiler:
     def __init__(self, backend: Backend, connection: Connection | None = None) -> None:
         self._expr_compiler = ExprCompiler(backend)
         self._connection = connection
+        self._subquery_counter = 0
 
     def compile(self, op: Op) -> exp.Expression:
         """Recursively compile an ``Op`` tree."""
@@ -222,11 +223,12 @@ class QueryCompiler:
         msg = f"Cannot determine column name for {type(expr).__name__}"
         raise CompileError(msg)
 
-    @staticmethod
-    def _ensure_subquery(select: exp.Expression) -> exp.Subquery:
+    def _ensure_subquery(self, select: exp.Expression) -> exp.Subquery:
+        alias = f"_t{self._subquery_counter}"
+        self._subquery_counter += 1
         if isinstance(select, exp.Select):
-            return select.subquery()
-        return select.subquery()  # type: ignore[union-attr]
+            return select.subquery(alias)
+        return select.subquery(alias)  # type: ignore[union-attr]
 
     @staticmethod
     def _join_type(how: str) -> str:
