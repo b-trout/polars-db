@@ -7,14 +7,22 @@ requires-python = ">=3.13"
 dependencies = [
     "polars>=1.39.3",
     "sqlglot>=30.4.3",
-    "connectorx>=0.3.0",
     "pyarrow>=23.0.1",
     "duckdb>=1.5.2",
-    "psycopg2-binary>=2.9.11",
 ]
 
 [project.optional-dependencies]
 bigquery = ["google-cloud-bigquery>=3.0.0"]
+postgres = [
+    "psycopg2-binary>=2.9.11",
+]
+mysql = [
+    "pymysql>=1.1.2",
+    "cryptography>=44.0.0",
+]
+sqlserver = [
+    "pymssql>=2.3.13",
+]
 
 [dependency-groups]
 dev = [
