@@ -35,32 +35,38 @@ class TestBackendConnectivity:
         c.close()
 
     def test_create_table(self, conn: pdb.Connection) -> None:
+        """Verify CREATE TABLE DDL executes without error."""
         conn.execute_raw(
             f"CREATE TABLE {self.TABLE} (id INTEGER, name VARCHAR(100), value INTEGER)"
         )
 
     def test_insert_data(self, conn: pdb.Connection) -> None:
+        """Verify INSERT DML executes without error."""
         conn.execute_raw(f"INSERT INTO {self.TABLE} VALUES (1, 'Alice', 10)")
         conn.execute_raw(f"INSERT INTO {self.TABLE} VALUES (2, 'Bob', 20)")
         conn.execute_raw(f"INSERT INTO {self.TABLE} VALUES (3, 'Charlie', 30)")
 
     def test_select_all(self, conn: pdb.Connection) -> None:
+        """Verify SELECT * returns all inserted rows with correct columns."""
         result = conn.table(self.TABLE).collect()
         assert len(result) == 3
         assert set(result.columns) == {"id", "name", "value"}
 
     def test_filter(self, conn: pdb.Connection) -> None:
+        """Verify WHERE clause filters rows correctly."""
         result = conn.table(self.TABLE).filter(pdb.col("value") > 15).collect()
         names = sorted(result["name"].to_list())
         assert names == ["Bob", "Charlie"]
 
     def test_select_columns(self, conn: pdb.Connection) -> None:
+        """Verify SELECT with specific columns returns correct schema."""
         result = conn.table(self.TABLE).select("name", "value").collect()
         assert set(result.columns) == {"name", "value"}
         assert len(result) == 3
 
     @_tsql_order_by_xfail
     def test_sort(self, conn: pdb.Connection) -> None:
+        """Verify ORDER BY sorts results correctly."""
         result = (
             conn.table(self.TABLE)
             .sort("value", descending=True)
@@ -70,6 +76,7 @@ class TestBackendConnectivity:
         assert result["name"].to_list() == ["Charlie", "Bob", "Alice"]
 
     def test_group_by_agg(self, conn: pdb.Connection) -> None:
+        """Verify GROUP BY with aggregation returns grouped results."""
         result = (
             conn.table(self.TABLE)
             .group_by("name")
@@ -80,6 +87,7 @@ class TestBackendConnectivity:
         assert len(result) == 3
 
     def test_show_query(self, conn: pdb.Connection) -> None:
+        """Verify ``show_query()`` returns valid SQL with WHERE and ORDER BY."""
         query = (
             conn.table(self.TABLE)
             .filter(pdb.col("value") > 10)
@@ -91,4 +99,5 @@ class TestBackendConnectivity:
         assert "ORDER BY" in query.upper()
 
     def test_cleanup(self, conn: pdb.Connection) -> None:
+        """Verify DROP TABLE cleans up the test table."""
         conn.execute_raw(f"DROP TABLE {self.TABLE}")
