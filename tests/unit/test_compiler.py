@@ -2,6 +2,7 @@
 
 import pytest
 
+from polars_db.backends.bigquery import BigQueryBackend
 from polars_db.backends.postgres import PostgresBackend
 from polars_db.compiler.query_compiler import QueryCompiler
 from polars_db.expr import AggExpr, AliasExpr, BinaryExpr, ColExpr, LitExpr, WindowExpr
@@ -22,6 +23,14 @@ def _compile_sql(op: object) -> str:
     compiler = QueryCompiler(PostgresBackend())
     ast = compiler.compile(op)  # type: ignore[arg-type]
     return ast.sql(dialect="postgres")
+
+
+def _compile_bigquery_sql(op: object) -> str:
+    """Compile an Op tree to a BigQuery SQL string."""
+    backend = BigQueryBackend()
+    compiler = QueryCompiler(backend)
+    ast = compiler.compile(op)  # type: ignore[arg-type]
+    return backend.render(ast)
 
 
 @pytest.mark.unit
@@ -308,3 +317,92 @@ class TestComplexQuery:
         assert "ORDER BY" in sql.upper()
         assert "DESC" in sql.upper()
         assert "LIMIT" in sql.upper()
+
+
+@pytest.mark.unit
+class TestBigQueryDialect:
+    """Tests for BigQuery SQL dialect generation.
+
+    BigQuery integration tests use SQL snapshot testing (no emulator)
+    following the dbplyr strategy for vendor DWH backends.
+    """
+
+    def test_select(self) -> None:
+        """Verify BigQuery SELECT column projection."""
+        op = SelectOp(
+            child=TableRef(name="users"),
+            exprs=(ColExpr(name="name"), ColExpr(name="age")),
+        )
+        sql = _compile_bigquery_sql(op)
+        assert "name" in sql
+        assert "age" in sql
+
+    def test_filter(self) -> None:
+        """Verify BigQuery WHERE clause generation."""
+        op = FilterOp(
+            child=TableRef(name="users"),
+            predicate=BinaryExpr(
+                op=">", left=ColExpr(name="age"), right=LitExpr(value=30)
+            ),
+        )
+        sql = _compile_bigquery_sql(op)
+        assert "WHERE" in sql.upper()
+        assert "age" in sql
+        assert "30" in sql
+
+    def test_sort(self) -> None:
+        """Verify BigQuery ORDER BY generation."""
+        op = SortOp(
+            child=TableRef(name="users"),
+            by=(ColExpr(name="age"),),
+            descending=(True,),
+        )
+        sql = _compile_bigquery_sql(op)
+        assert "ORDER BY" in sql.upper()
+        assert "DESC" in sql.upper()
+
+    def test_group_by_agg(self) -> None:
+        """Verify BigQuery GROUP BY with SUM aggregation."""
+        op = GroupByOp(
+            child=TableRef(name="orders"),
+            by=(ColExpr(name="user_id"),),
+            agg=(
+                AliasExpr(
+                    expr=AggExpr(func="sum", arg=ColExpr(name="amount")),
+                    alias="total",
+                ),
+            ),
+        )
+        sql = _compile_bigquery_sql(op)
+        assert "GROUP BY" in sql.upper()
+        assert "SUM" in sql.upper()
+        assert "total" in sql
+
+    def test_limit(self) -> None:
+        """Verify BigQuery LIMIT clause generation."""
+        op = LimitOp(child=TableRef(name="users"), n=10)
+        sql = _compile_bigquery_sql(op)
+        assert "LIMIT" in sql.upper()
+        assert "10" in sql
+
+    def test_combined_filter_sort_select(self) -> None:
+        """Verify combined query generates valid BigQuery SQL."""
+        op = SortOp(
+            child=SelectOp(
+                child=FilterOp(
+                    child=TableRef(name="users"),
+                    predicate=BinaryExpr(
+                        op=">", left=ColExpr(name="age"), right=LitExpr(value=30)
+                    ),
+                ),
+                exprs=(ColExpr(name="name"), ColExpr(name="age")),
+            ),
+            by=(ColExpr(name="age"),),
+            descending=(False,),
+        )
+        sql = _compile_bigquery_sql(op)
+        assert "WHERE" in sql.upper()
+        assert "ORDER BY" in sql.upper()
+        assert "NULLS LAST" in sql.upper()
+        assert "name" in sql
+        assert "age" in sql

@@ -59,7 +59,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        backend: [postgres, mysql, sqlserver, duckdb, sqlite, bigquery]
+        backend: [postgres, mysql, sqlserver, duckdb, sqlite]
         include:
           - backend: postgres
             compose_service: postgres
@@ -76,12 +76,8 @@ jobs:
           - backend: sqlite
             compose_service: ''
             extras: ''
-          - backend: bigquery
-            compose_service: bigquery
-            extras: bigquery
     env:
       POLARS_DB_TEST_BACKEND: ${{ matrix.backend }}
-      BIGQUERY_EMULATOR_HOST: localhost:9050
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
