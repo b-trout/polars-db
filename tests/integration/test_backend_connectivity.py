@@ -11,6 +11,8 @@ import polars_db as pdb
 from tests.conftest import BACKEND_CONFIG
 
 _BACKEND = os.environ.get("POLARS_DB_TEST_BACKEND", "duckdb")
+_IS_BIGQUERY = _BACKEND == "bigquery"
+_skip_bigquery = pytest.mark.skipif(_IS_BIGQUERY, reason="BigQuery tested separately")
 _tsql_order_by_xfail = pytest.mark.xfail(
     _BACKEND == "sqlserver",
     reason="T-SQL forbids ORDER BY in subqueries without TOP/OFFSET",
@@ -18,6 +20,7 @@ _tsql_order_by_xfail = pytest.mark.xfail(
 
 
 @pytest.mark.integration
+@_skip_bigquery
 class TestBackendConnectivity:
     """Verify DDL -> INSERT -> SELECT -> DROP works on every backend."""
 
@@ -29,7 +32,6 @@ class TestBackendConnectivity:
         config = dict(BACKEND_CONFIG[backend_name])
         c = pdb.connect(**config)
         yield c
-        # Ensure cleanup even if a test fails
         with contextlib.suppress(Exception):
             c.execute_raw(f"DROP TABLE IF EXISTS {self.TABLE}")
         c.close()
@@ -101,3 +103,67 @@ class TestBackendConnectivity:
     def test_cleanup(self, conn: pdb.Connection) -> None:
         """Verify DROP TABLE cleans up the test table."""
         conn.execute_raw(f"DROP TABLE {self.TABLE}")
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(not _IS_BIGQUERY, reason="BigQuery-specific tests")
+class TestBigQueryConnectivity:
+    """Verify BigQuery SQL generation and SELECT execution on emulator."""
+
+    TABLE = "test_dataset._bq_connectivity"
+
+    @pytest.fixture(autouse=True, scope="class")
+    def conn(self, backend_name: str) -> pdb.Connection:
+        """Create a BigQuery connection with emulator env set."""
+        if not os.environ.get("BIGQUERY_EMULATOR_HOST"):
+            os.environ["BIGQUERY_EMULATOR_HOST"] = "localhost:9050"
+        config = dict(BACKEND_CONFIG[backend_name])
+        c = pdb.connect(**config)
+        yield c
+        with contextlib.suppress(Exception):
+            c.execute_raw(f"DROP TABLE IF EXISTS {self.TABLE}")
+        c.close()
+
+    def test_select_literal(self, conn: pdb.Connection) -> None:
+        """Verify SELECT with computed values works on the emulator."""
+        result = conn.execute_raw("SELECT 1 AS id, 'hello' AS name")
+        assert len(result) == 1
+        assert "id" in result.columns
+
+    def test_create_table(self, conn: pdb.Connection) -> None:
+        """Verify CREATE TABLE DDL executes without error."""
+        conn.execute_raw(
+            f"CREATE TABLE {self.TABLE} (id INT64, name STRING, value INT64)"
+        )
+
+    def test_show_query_filter(self, conn: pdb.Connection) -> None:
+        """Verify SQL generation for filter produces valid BigQuery SQL."""
+        query = conn.table(self.TABLE).filter(pdb.col("value") > 10).show_query()
+        assert self.TABLE in query
+        assert "WHERE" in query.upper()
+
+    def test_show_query_select(self, conn: pdb.Connection) -> None:
+        """Verify SQL generation for column selection."""
+        query = conn.table(self.TABLE).select("name", "value").show_query()
+        assert "name" in query
+        assert "value" in query
+
+    def test_show_query_sort(self, conn: pdb.Connection) -> None:
+        """Verify SQL generation for ORDER BY."""
+        query = conn.table(self.TABLE).sort("name").show_query()
+        assert "ORDER BY" in query.upper()
+
+    def test_show_query_group_by(self, conn: pdb.Connection) -> None:
+        """Verify SQL generation for GROUP BY with aggregation."""
+        query = (
+            conn.table(self.TABLE)
+            .group_by("name")
+            .agg(pdb.col("value").sum())
+            .show_query()
+        )
+        assert "GROUP BY" in query.upper()
+        assert "SUM" in query.upper()
+
+    def test_cleanup(self, conn: pdb.Connection) -> None:
+        """Verify DROP TABLE cleans up the test table."""
+        conn.execute_raw(f"DROP TABLE IF EXISTS {self.TABLE}")
