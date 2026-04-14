@@ -8,7 +8,8 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 jobs:
-  ci:
+  # ===== Stage 1: Quality =====
+  quality:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,5 +19,90 @@ jobs:
           python-version: '3.13'
       - name: Install dependencies
         run: uv sync --all-groups
-      - name: Run CI pipeline
-        run: uv run poe ci
+      - name: Format check
+        run: uv run poe format-check
+      - name: Lint
+        run: uv run poe lint
+      - name: Type check
+        run: uv run poe type-check
+      - name: YAML format check
+        run: uv run poe yaml-format-check
+      - name: YAML lint
+        run: uv run poe yaml-lint
+      - name: Docker lint
+        run: uv run poe docker-lint
+
+  # ===== Stage 2: Unit Test =====
+  unit-test:
+    needs: quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install dependencies
+        run: uv sync --all-groups
+      - name: Run unit tests
+        run: uv run poe test-unit
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml
+
+  # ===== Stage 3: Integration Test =====
+  integration-test:
+    needs: unit-test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [postgres, mysql, sqlserver, duckdb, sqlite, bigquery]
+        include:
+          - backend: postgres
+            compose_service: postgres
+            extras: postgres
+          - backend: mysql
+            compose_service: mysql
+            extras: mysql
+          - backend: sqlserver
+            compose_service: sqlserver
+            extras: sqlserver
+          - backend: duckdb
+            compose_service: ''
+            extras: ''
+          - backend: sqlite
+            compose_service: ''
+            extras: ''
+          - backend: bigquery
+            compose_service: bigquery
+            extras: bigquery
+    env:
+      POLARS_DB_TEST_BACKEND: ${{ matrix.backend }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install dependencies
+        run: uv sync --all-groups ${{ matrix.extras && format('--extra {0}', matrix.extras) }}
+      - name: Start backend service
+        if: matrix.compose_service != ''
+        run: uv run python scripts/compose_up.py --service ${{ matrix.compose_service }}
+      - name: Wait for backend readiness
+        if: matrix.compose_service != ''
+        run: uv run python scripts/wait_for_backend.py ${{ matrix.backend }}
+      - name: Run integration tests
+        run: uv run poe test-integration
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.backend }}
+          path: results-${{ matrix.backend }}.xml
+      - name: Stop backend service
+        if: always() && matrix.compose_service != ''
+        run: docker compose down -v

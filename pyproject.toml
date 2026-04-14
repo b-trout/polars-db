@@ -68,6 +68,11 @@ cmd = "pytest"
 help = "Run unit tests with coverage"
 cmd = "pytest -m unit --cov=polars_db --cov-report=xml -n auto"
 
+[tool.poe.tasks.test-integration]
+help = "Run integration tests for the backend specified by POLARS_DB_TEST_BACKEND"
+shell = "pytest -m \"integration and backend_${POLARS_DB_TEST_BACKEND}\" --tb=short --junit-xml=results-${POLARS_DB_TEST_BACKEND}.xml"
+interpreter = "bash"
+
 [tool.poe.tasks.yaml-lint]
 help = "Run yamllint"
 cmd = "yamllint -s ."
