@@ -116,21 +116,25 @@ def connect(conn_str: str, **kwargs: object) -> Connection:
 
 def detect_backend(conn_str: str) -> Backend:
     """Auto-detect the backend from a connection string."""
+    from polars_db.backends.bigquery import BigQueryBackend
+    from polars_db.backends.duckdb import DuckDBBackend
+    from polars_db.backends.mysql import MySQLBackend
     from polars_db.backends.postgres import PostgresBackend
+    from polars_db.backends.sqlite import SQLiteBackend
+    from polars_db.backends.sqlserver import SQLServerBackend
 
     if conn_str.startswith(("postgresql://", "postgres://")):
         return PostgresBackend()
     if "duckdb" in conn_str:
-        # Phase 4: DuckDBBackend
-        return PostgresBackend()  # temporary fallback
+        return DuckDBBackend()
     if conn_str.startswith("mysql://"):
-        return PostgresBackend()  # temporary fallback
+        return MySQLBackend()
     if conn_str.startswith("sqlite://"):
-        return PostgresBackend()  # temporary fallback
+        return SQLiteBackend()
     if conn_str.startswith("mssql://"):
-        return PostgresBackend()  # temporary fallback
+        return SQLServerBackend()
     if "bigquery" in conn_str or conn_str.startswith("bigquery://"):
-        return PostgresBackend()  # temporary fallback
+        return BigQueryBackend()
 
     msg = f"Unsupported connection string: {conn_str}"
     raise ValueError(msg)
