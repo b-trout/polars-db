@@ -8,6 +8,7 @@ dependencies = [
     "polars>=1.39.3",
     "sqlglot>=30.4.3",
     "connectorx>=0.3.0",
+    "pyarrow>=23.0.1",
 ]
 
 [project.optional-dependencies]
@@ -118,6 +119,14 @@ markers = [
     "backend_bigquery: BigQuery emulator backend",
 ]
 addopts = "--strict-markers"
+
+# --- ty -------------------------------------------------------------------
+
+[tool.ty.rules]
+# sqlglot uses dynamic methods on exp.Expression that ty cannot resolve
+unresolved-attribute = "warn"
+# op.child after hasattr() check, list invariance with sqlglot types
+invalid-argument-type = "warn"
 
 # --- yamlfix ---------------------------------------------------------------
 
