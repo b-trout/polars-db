@@ -42,7 +42,7 @@ services:
     command: --project=test-project --dataset=test_dataset
     ports: [9050:9050]
     healthcheck:
-      test: [CMD-SHELL, curl -sf http://localhost:9050/ || exit 1]
+      test: [CMD, bash, -c, echo > /dev/tcp/localhost/9050]
       interval: 5s
       timeout: 3s
       retries: 10

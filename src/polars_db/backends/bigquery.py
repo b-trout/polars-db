@@ -26,10 +26,18 @@ class BigQueryBackend(Backend):
     def dialect(self) -> str:
         return "bigquery"
 
+    _DML_PREFIXES = ("INSERT", "UPDATE", "DELETE", "MERGE", "CREATE", "DROP", "ALTER")
+
     def execute_sql(self, sql: str, conn_str: str) -> pa.Table:
         client = self._get_client(conn_str)
         job = client.query(sql)
-        result = job.result()
+        # The BigQuery emulator hangs on job.result() for DML/DDL
+        # statements even though job.state is already DONE.
+        # Skip result fetching for non-SELECT statements.
+        stripped = sql.strip().upper()
+        if any(stripped.startswith(p) for p in self._DML_PREFIXES):
+            return pa.table({})
+        result = job.result(timeout=30)
         if result.total_rows == 0 and not result.schema:
             return pa.table({})
         return result.to_arrow()
