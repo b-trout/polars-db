@@ -16,4 +16,92 @@ dev = [
     "pytest>=9.0.3",
     "ruff>=0.15.10",
     "ty>=0.0.29",
+    "hadolint-coatl>=2.14.0",
+    "yamllint>=1.38.0",
+    "yamlfix>=1.19.0",
 ]
+
+# --- Poe Tasks -----------------------------------------------------------
+
+[tool.poe.tasks.lint]
+help = "Run ruff linter"
+cmd = "ruff check src tests"
+
+[tool.poe.tasks.lint-fix]
+help = "Run ruff linter with auto-fix"
+cmd = "ruff check --fix src tests"
+
+[tool.poe.tasks.format]
+help = "Run ruff formatter"
+cmd = "ruff format src tests"
+
+[tool.poe.tasks.format-check]
+help = "Check formatting without modifying files"
+cmd = "ruff format --check src tests"
+
+[tool.poe.tasks.type-check]
+help = "Run ty type checker"
+cmd = "ty check src"
+
+[tool.poe.tasks.test]
+help = "Run pytest"
+cmd = "pytest"
+
+[tool.poe.tasks.yaml-lint]
+help = "Run yamllint"
+cmd = "yamllint -s ."
+
+[tool.poe.tasks.yaml-format]
+help = "Run yamlfix formatter"
+cmd = "yamlfix --exclude '.venv/**/*.yaml' --exclude '.venv/**/*.yml' ."
+
+[tool.poe.tasks.yaml-format-check]
+help = "Check YAML formatting without modifying files"
+cmd = "yamlfix --check --exclude '.venv/**/*.yaml' --exclude '.venv/**/*.yml' ."
+
+[tool.poe.tasks.docker-lint]
+help = "Run hadolint on Dockerfile"
+cmd = "hadolint Dockerfile"
+
+[tool.poe.tasks.pre-commit]
+help = "Run all pre-commit checks"
+sequence = ["format", "lint-fix", "type-check", "yaml-format", "yaml-lint", "docker-lint"]
+
+[tool.poe.tasks.ci]
+help = "Run full CI pipeline"
+sequence = ["format-check", "lint", "type-check", "yaml-format-check", "yaml-lint", "docker-lint", "test"]
+
+# --- Ruff -----------------------------------------------------------------
+
+[tool.ruff]
+target-version = "py313"
+line-length = 88
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "SIM",  # flake8-simplify
+    "RUF",  # ruff-specific rules
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["polars_db"]
+
+# --- Pytest ----------------------------------------------------------------
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+# --- yamlfix ---------------------------------------------------------------
+
+[tool.yamlfix]
+line_length = 120
+none_representation = "null"
