@@ -1,0 +1,19 @@
+{
+  "name": "polars-db",
+  "build": {
+    "dockerfile": "../Dockerfile"
+  },
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/devcontainers/features/node:1": {},
+    "ghcr.io/anthropics/devcontainer-features/claude-code:1": {}
+  },
+  "remoteUser": "user",
+  "workspaceFolder": "/app",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/app,type=bind",
+  "mounts": [
+    "source=${localEnv:HOME}/.claude,target=/home/user/.claude,type=bind"
+  ],
+  "postCreateCommand": "uv sync --all-groups && uv run pre-commit install"
+}
