@@ -9,6 +9,7 @@ dependencies = [
     "sqlglot>=30.4.3",
     "connectorx>=0.3.0",
     "pyarrow>=23.0.1",
+    "duckdb>=1.5.2",
 ]
 
 [project.optional-dependencies]
