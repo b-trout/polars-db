@@ -40,7 +40,7 @@ The CI design document specified 10 backends. The current implementation covers 
 | SQL Server | Implemented | Core target |
 | DuckDB | Implemented | In-memory, no container |
 | SQLite | Implemented | In-memory, no container |
-| BigQuery | Implemented | Emulator with limitations |
+| BigQuery | SQL snapshot test (unit) | Emulator unreliable; SQL generation tested in unit tests |
 | Snowflake | Not yet | Emulator fidelity concerns |
 | Redshift | Not yet | PostgreSQL proxy approach |
 | Azure Synapse | Not yet | SQL Edge proxy approach |

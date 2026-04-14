@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by [ADR-0015](0015-bigquery-snapshot-testing.md)
 
 ## Context
 
