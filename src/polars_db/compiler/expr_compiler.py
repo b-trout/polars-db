@@ -51,11 +51,29 @@ _AGG_FUNCS: dict[str, type[exp.Expression]] = {
 }
 
 _BUILTIN_FUNCS: dict[str, type[exp.Expression]] = {
+    # String namespace functions
     "lower": exp.Lower,
     "upper": exp.Upper,
     "length": exp.Length,
+    "substring": exp.Substring,
+    "replace": exp.Anonymous,  # handled specially below
+    # Null handling
     "coalesce": exp.Coalesce,
+    # Type conversion
     "cast": exp.Cast,
+}
+
+# Functions that compile to LIKE patterns
+_LIKE_FUNCS = {"contains", "starts_with", "ends_with"}
+
+# Date/time extraction functions
+_EXTRACT_FUNCS = {
+    "extract_year": "year",
+    "extract_month": "month",
+    "extract_day": "day",
+    "extract_hour": "hour",
+    "extract_minute": "minute",
+    "extract_second": "second",
 }
 
 
@@ -188,9 +206,62 @@ class ExprCompiler:
         if name == "row_number":
             return exp.Anonymous(this="ROW_NUMBER", expressions=[])
 
+        # String LIKE patterns
+        if name in _LIKE_FUNCS:
+            return self._compile_like(name, compiled_args)
+
+        # Date/time EXTRACT functions
+        if name in _EXTRACT_FUNCS:
+            return exp.Extract(
+                this=exp.Var(this=_EXTRACT_FUNCS[name]),
+                expression=compiled_args[0],
+            )
+
+        # DATE() function
+        if name == "date":
+            return exp.Anonymous(this="DATE", expressions=compiled_args)
+
+        # DATE_TRUNC function
+        if name == "date_trunc":
+            return exp.Anonymous(this="DATE_TRUNC", expressions=compiled_args)
+
+        # REPLACE function
+        if name == "replace":
+            return exp.Anonymous(this="REPLACE", expressions=compiled_args)
+
+        # SUBSTRING function
+        if name == "substring":
+            return exp.Substring(
+                this=compiled_args[0],
+                start=compiled_args[1],
+                length=compiled_args[2],
+            )
+
         cls = _BUILTIN_FUNCS.get(name)
         if cls is not None:
             return cls(this=compiled_args[0], expressions=compiled_args[1:])
 
         # Fallback: generic function call
         return exp.Anonymous(this=name, expressions=compiled_args)
+
+    @staticmethod
+    def _compile_like(name: str, compiled_args: list[exp.Expression]) -> exp.Expression:
+        """Compile contains/starts_with/ends_with to LIKE expressions."""
+        col = compiled_args[0]
+        pattern = compiled_args[1]
+
+        # Build LIKE pattern based on function name
+        if name == "contains":
+            like_pattern = exp.Concat(
+                expressions=[
+                    exp.Literal.string("%"),
+                    pattern,
+                    exp.Literal.string("%"),
+                ]
+            )
+        elif name == "starts_with":
+            like_pattern = exp.Concat(expressions=[pattern, exp.Literal.string("%")])
+        else:  # ends_with
+            like_pattern = exp.Concat(expressions=[exp.Literal.string("%"), pattern])
+
+        return exp.Like(this=col, expression=like_pattern)
