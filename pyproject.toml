@@ -10,6 +10,7 @@ dependencies = [
     "connectorx>=0.3.0",
     "pyarrow>=23.0.1",
     "duckdb>=1.5.2",
+    "psycopg2-binary>=2.9.11",
 ]
 
 [project.optional-dependencies]
