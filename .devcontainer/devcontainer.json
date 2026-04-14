@@ -13,7 +13,9 @@
   "workspaceFolder": "/app",
   "workspaceMount": "source=${localWorkspaceFolder},target=/app,type=bind",
   "mounts": [
-    "source=${localEnv:HOME}/.claude,target=/home/user/.claude,type=bind"
+    "source=${localEnv:HOME}/.claude,target=/home/user/.claude,type=bind",
+    "source=${localEnv:HOME}/.claude.json,target=/home/user/.claude.json,type=bind",
+    "source=${localEnv:HOME}/.ssh,target=/home/user/.ssh,type=bind,readonly"
   ],
   "postCreateCommand": "uv sync --all-groups && uv run pre-commit install"
 }
