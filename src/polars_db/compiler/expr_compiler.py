@@ -170,15 +170,18 @@ class ExprCompiler:
 
         # Window helper functions
         if name == "shift":
-            n = compiled_args[1] if len(compiled_args) > 1 else exp.Literal.number(1)
-            n_val = n.this if isinstance(n, exp.Literal) else 1
-            if isinstance(n_val, str):
-                n_val = int(n_val)
-            if n_val >= 0:
-                return exp.Anonymous(this="LAG", expressions=[compiled_args[0], n])
+            # Resolve the shift amount from the original Expr args
+            from polars_db.expr import LitExpr as _LitExpr
+
+            raw_n = (
+                args[1].value if len(args) > 1 and isinstance(args[1], _LitExpr) else 1
+            )
+            abs_n = exp.Literal.number(abs(raw_n))
+            if raw_n >= 0:
+                return exp.Anonymous(this="LAG", expressions=[compiled_args[0], abs_n])
             return exp.Anonymous(
                 this="LEAD",
-                expressions=[compiled_args[0], exp.Literal.number(abs(n_val))],
+                expressions=[compiled_args[0], abs_n],
             )
         if name == "rank":
             return exp.Anonymous(this="RANK", expressions=[])

@@ -13,7 +13,9 @@ from polars_db.expr import (
     ColExpr,
     FuncExpr,
     LitExpr,
+    SortExpr,
     UnaryExpr,
+    WindowExpr,
 )
 
 
@@ -166,3 +168,71 @@ class TestSpecialFunctions:
         )
         result = compiler.compile(expr)
         assert isinstance(result, exp.In)
+
+
+@pytest.mark.unit
+class TestWindow:
+    def test_sum_over_partition(self, compiler: ExprCompiler) -> None:
+        expr = WindowExpr(
+            expr=AggExpr(func="sum", arg=ColExpr(name="amount")),
+            partition_by=(ColExpr(name="department"),),
+        )
+        result = compiler.compile(expr)
+        assert isinstance(result, exp.Window)
+        sql = result.sql(dialect="postgres")
+        assert "SUM" in sql.upper()
+        assert "PARTITION BY" in sql.upper()
+
+    def test_window_with_order_by(self, compiler: ExprCompiler) -> None:
+        expr = WindowExpr(
+            expr=AggExpr(func="sum", arg=ColExpr(name="amount")),
+            partition_by=(ColExpr(name="dept"),),
+            order_by=(ColExpr(name="date"),),
+        )
+        result = compiler.compile(expr)
+        assert isinstance(result, exp.Window)
+        sql = result.sql(dialect="postgres")
+        assert "ORDER BY" in sql.upper()
+
+    def test_shift_lag(self, compiler: ExprCompiler) -> None:
+        expr = FuncExpr(
+            func_name="shift", args=(ColExpr(name="value"), LitExpr(value=1))
+        )
+        result = compiler.compile(expr)
+        sql = result.sql(dialect="postgres")
+        assert "LAG" in sql.upper()
+
+    def test_shift_lead(self, compiler: ExprCompiler) -> None:
+        expr = FuncExpr(
+            func_name="shift", args=(ColExpr(name="value"), LitExpr(value=-2))
+        )
+        result = compiler.compile(expr)
+        sql = result.sql(dialect="postgres")
+        assert "LEAD" in sql.upper()
+
+    def test_rank(self, compiler: ExprCompiler) -> None:
+        expr = FuncExpr(func_name="rank", args=(ColExpr(name="score"),))
+        result = compiler.compile(expr)
+        sql = result.sql(dialect="postgres")
+        assert "RANK" in sql.upper()
+
+    def test_row_number(self, compiler: ExprCompiler) -> None:
+        expr = FuncExpr(func_name="row_number", args=(ColExpr(name="id"),))
+        result = compiler.compile(expr)
+        sql = result.sql(dialect="postgres")
+        assert "ROW_NUMBER" in sql.upper()
+
+
+@pytest.mark.unit
+class TestSortExpr:
+    def test_sort_asc(self, compiler: ExprCompiler) -> None:
+        expr = SortExpr(expr=ColExpr(name="age"), descending=False)
+        result = compiler.compile(expr)
+        assert isinstance(result, exp.Ordered)
+
+    def test_sort_desc(self, compiler: ExprCompiler) -> None:
+        expr = SortExpr(expr=ColExpr(name="age"), descending=True)
+        result = compiler.compile(expr)
+        assert isinstance(result, exp.Ordered)
+        sql = result.sql(dialect="postgres")
+        assert "DESC" in sql.upper()

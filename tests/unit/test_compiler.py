@@ -4,7 +4,7 @@ import pytest
 
 from polars_db.backends.postgres import PostgresBackend
 from polars_db.compiler.query_compiler import QueryCompiler
-from polars_db.expr import AggExpr, AliasExpr, BinaryExpr, ColExpr, LitExpr
+from polars_db.expr import AggExpr, AliasExpr, BinaryExpr, ColExpr, LitExpr, WindowExpr
 from polars_db.ops import (
     FilterOp,
     GroupByOp,
@@ -13,6 +13,7 @@ from polars_db.ops import (
     SelectOp,
     SortOp,
     TableRef,
+    WithColumnsOp,
 )
 
 
@@ -197,3 +198,78 @@ class TestJoin:
         sql = _compile_sql(op)
         assert "NOT" in sql.upper()
         assert "EXISTS" in sql.upper()
+
+
+@pytest.mark.unit
+class TestWithColumnsWindow:
+    def test_with_columns_window_function(self) -> None:
+        """Test with_columns adding a window function.
+
+        Use SelectOp as child so column resolution works without Connection.
+        """
+        op = WithColumnsOp(
+            child=SelectOp(
+                child=TableRef(name="sales"),
+                exprs=(
+                    ColExpr(name="id"),
+                    ColExpr(name="amount"),
+                    ColExpr(name="department"),
+                ),
+            ),
+            exprs=(
+                AliasExpr(
+                    expr=WindowExpr(
+                        expr=AggExpr(func="sum", arg=ColExpr(name="amount")),
+                        partition_by=(ColExpr(name="department"),),
+                    ),
+                    alias="dept_total",
+                ),
+            ),
+        )
+        sql = _compile_sql(op)
+        assert "SUM" in sql.upper()
+        assert "OVER" in sql.upper()
+        assert "PARTITION BY" in sql.upper()
+        assert "dept_total" in sql
+
+
+@pytest.mark.unit
+class TestComplexQuery:
+    def test_filter_join_groupby_sort_limit(self) -> None:
+        """Test a complex multi-operation query chain."""
+        op = LimitOp(
+            child=SortOp(
+                child=GroupByOp(
+                    child=JoinOp(
+                        left=FilterOp(
+                            child=TableRef(name="users"),
+                            predicate=BinaryExpr(
+                                op=">",
+                                left=ColExpr(name="age"),
+                                right=LitExpr(value=18),
+                            ),
+                        ),
+                        right=TableRef(name="orders"),
+                        on=(ColExpr(name="user_id"),),
+                        how="left",
+                    ),
+                    by=(ColExpr(name="name"),),
+                    agg=(
+                        AliasExpr(
+                            expr=AggExpr(func="sum", arg=ColExpr(name="amount")),
+                            alias="total",
+                        ),
+                    ),
+                ),
+                by=(ColExpr(name="total"),),
+                descending=(True,),
+            ),
+            n=10,
+        )
+        sql = _compile_sql(op)
+        assert "WHERE" in sql.upper()
+        assert "LEFT JOIN" in sql.upper()
+        assert "GROUP BY" in sql.upper()
+        assert "ORDER BY" in sql.upper()
+        assert "DESC" in sql.upper()
+        assert "LIMIT" in sql.upper()
