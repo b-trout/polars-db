@@ -94,9 +94,14 @@ def _format_row(row: tuple[object, ...]) -> str:
 
 
 def _insert_statements(
-    table: str, rows: tuple[tuple[object, ...], ...]
+    table: str,
+    columns: tuple[str, ...],
+    rows: tuple[tuple[object, ...], ...],
 ) -> tuple[str, ...]:
-    return tuple(f"INSERT INTO {table} VALUES ({_format_row(row)})" for row in rows)
+    cols = ", ".join(columns)
+    return tuple(
+        f"INSERT INTO {table} ({cols}) VALUES ({_format_row(row)})" for row in rows
+    )
 
 
 def _resolve_ddl(ddl_map: MappingProxyType[str, str], backend: str) -> str:
@@ -108,8 +113,10 @@ def build_seed_statements(backend: str = "default") -> tuple[str, ...]:
     return (
         _resolve_ddl(USERS_DDL, backend),
         _resolve_ddl(ORDERS_DDL, backend),
-        *_insert_statements("users", USERS_DATA),
-        *_insert_statements("orders", ORDERS_DATA),
+        *_insert_statements("users", ("id", "name", "age", "email"), USERS_DATA),
+        *_insert_statements(
+            "orders", ("id", "user_id", "amount", "status"), ORDERS_DATA
+        ),
     )
 
 
