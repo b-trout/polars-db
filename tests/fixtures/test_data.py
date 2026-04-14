@@ -44,6 +44,15 @@ ORDERS_DDL: MappingProxyType[str, str] = MappingProxyType(
             ordered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """,
+        "bigquery": """
+        CREATE TABLE IF NOT EXISTS orders (
+            id INT64 NOT NULL,
+            user_id INT64 NOT NULL,
+            amount FLOAT64 NOT NULL,
+            status STRING,
+            ordered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP()
+        )
+    """,
     }
 )
 

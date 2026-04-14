@@ -51,6 +51,8 @@ def backend_name() -> str:
 
 @pytest.fixture(scope="session")
 def connection(backend_name: str) -> Iterator[pdb.Connection]:
+    if backend_name == "bigquery" and not os.environ.get("BIGQUERY_EMULATOR_HOST"):
+        os.environ["BIGQUERY_EMULATOR_HOST"] = "localhost:9050"
     config = dict(BACKEND_CONFIG[backend_name])
     conn = pdb.connect(**config)
     _execute_all(conn, _resolve_seed_statements(backend_name))
