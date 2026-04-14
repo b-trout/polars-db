@@ -19,13 +19,14 @@ if TYPE_CHECKING:
 
 
 def _deep_eq(a: object, b: object) -> bool:
-    """Recursively compare values that may contain ``Expr`` instances.
+    """Recursively compare values that may contain ``Expr`` or ``Op`` instances.
 
     ``Expr.__eq__`` returns ``BinaryExpr`` instead of ``bool``, so the
     built-in ``==`` cannot be used for structural comparison.
+    Both ``Expr`` and ``Op`` provide ``_structural_eq()`` for this purpose.
     """
-    if isinstance(a, Expr) and isinstance(b, Expr):
-        return a._structural_eq(b)
+    if hasattr(a, "_structural_eq") and hasattr(b, "_structural_eq"):
+        return a._structural_eq(b)  # ty: ignore[call-non-callable]
     if isinstance(a, (list, tuple)) and isinstance(b, (list, tuple)):
         return (
             type(a) is type(b)
@@ -145,7 +146,9 @@ class Expr:
     def over(self, *partition_by: builtins.str | Expr) -> WindowExpr:
         return WindowExpr(
             expr=self,
-            partition_by=tuple(_ensure_expr(e) for e in partition_by),
+            partition_by=tuple(
+                ColExpr(name=e) if isinstance(e, str) else e for e in partition_by
+            ),
         )
 
     def shift(self, n: int = 1) -> FuncExpr:

@@ -114,9 +114,11 @@ class QueryCompiler:
                 right_sql = self._ensure_subquery(self.compile(right))
                 join_type = self._join_type(how)
                 if on is not None:
-                    on_expr = self._compile_join_on_same(on)
-                else:
-                    on_expr = self._compile_join_on_different(left_on, right_on)
+                    using_cols = [self._expr_compiler.compile(e) for e in on]
+                    return left_sql.join(
+                        right_sql, using=using_cols, join_type=join_type
+                    )
+                on_expr = self._compile_join_on_different(left_on, right_on)
                 return left_sql.join(right_sql, on=on_expr, join_type=join_type)
 
             case SortOp(child=child, by=by, descending=descending):
@@ -228,12 +230,13 @@ class QueryCompiler:
 
     @staticmethod
     def _join_type(how: str) -> str:
+        # sqlglot .join() uses f"FROM _ {join_type} JOIN _" template
         mapping = {
-            "inner": "JOIN",
-            "left": "LEFT JOIN",
-            "right": "RIGHT JOIN",
-            "outer": "FULL OUTER JOIN",
-            "cross": "CROSS JOIN",
+            "inner": "",
+            "left": "LEFT",
+            "right": "RIGHT",
+            "outer": "FULL OUTER",
+            "cross": "CROSS",
         }
         if how in mapping:
             return mapping[how]
