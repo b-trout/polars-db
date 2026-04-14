@@ -1,8 +1,4 @@
-"""SQLite backend using Python stdlib sqlite3.
-
-connectorx cannot handle in-memory SQLite databases, so we use the
-standard library ``sqlite3`` module and convert results via pyarrow.
-"""
+"""SQLite backend using Python stdlib sqlite3."""
 
 from __future__ import annotations
 
