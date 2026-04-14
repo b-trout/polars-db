@@ -61,6 +61,7 @@ def wait_for_ready(
 def main() -> None:
     backend = sys.argv[1]
 
+    sys.path.insert(0, "src")
     sys.path.insert(0, ".")
     from tests.conftest import BACKEND_CONFIG
 
