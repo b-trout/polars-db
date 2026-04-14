@@ -46,6 +46,8 @@ class Connection:
         import polars
 
         arrow_table = self.backend.execute_sql(sql, self._conn_str)
+        if arrow_table.num_columns == 0:
+            return polars.DataFrame()
         result = polars.from_arrow(arrow_table)
         if isinstance(result, polars.Series):
             return result.to_frame()
