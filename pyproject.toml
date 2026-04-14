@@ -1,0 +1,19 @@
+[project]
+name = "polars-db"
+version = "0.1.0"
+description = "Query Builder with polars syntax"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "polars>=1.39.3",
+    "sqlglot>=30.4.3",
+]
+
+[dependency-groups]
+dev = [
+    "poethepoet>=0.44.0",
+    "pre-commit>=4.5.1",
+    "pytest>=9.0.3",
+    "ruff>=0.15.10",
+    "ty>=0.0.29",
+]
