@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 import pyarrow as pa
+import sqlglot.expressions as exp
 
 from polars_db.backends.base import Backend
 from polars_db.exceptions import BackendNotSupportedError
@@ -76,6 +77,24 @@ class SQLServerBackend(Backend):
             password=password,
             database=database,
         )
+
+    def render(self, ast: exp.Expression) -> str:
+        """Render AST to T-SQL, adding OFFSET 0 ROWS to subquery ORDER BY.
+
+        SQL Server forbids ORDER BY inside derived tables unless TOP or
+        OFFSET is also present.  Walk the tree and patch any subquery
+        whose inner SELECT has ORDER BY but no OFFSET/LIMIT.
+        """
+        for subquery in ast.find_all(exp.Subquery):
+            inner = subquery.this
+            if not isinstance(inner, exp.Select):
+                continue
+            has_order = inner.args.get("order") is not None
+            has_limit = inner.args.get("limit") is not None
+            has_offset = inner.args.get("offset") is not None
+            if has_order and not has_limit and not has_offset:
+                inner.set("offset", exp.Offset(expression=exp.Literal.number(0)))
+        return ast.sql(dialect=self.dialect, pretty=True)
 
     def function_mapping(self) -> dict[str, str]:
         return {"string_agg": "STRING_AGG"}
