@@ -4,6 +4,29 @@ A Python library that lets you query relational databases using Polars syntax.
 Write expressions like `pdb.col("age") > 30` and polars-db translates them into
 the appropriate SQL dialect for your backend.
 
+## Motivation
+
+In Python, there is no standard way to manipulate database tables using
+DataFrame syntax. You either write raw SQL strings or learn a library-specific
+API like SQLAlchemy or Ibis — none of which feel like the DataFrame code you
+already write. R solved this years ago with
+[dbplyr](https://dbplyr.tidyverse.org/), which lets dplyr code run transparently
+against databases. polars-db brings the same idea to the Polars ecosystem.
+
+| Library | API style | Target audience |
+|---|---|---|
+| [SQLAlchemy](https://www.sqlalchemy.org/) | SQLAlchemy's own API | General Python → SQL |
+| [Ibis](https://ibis-project.org/) | Ibis's own API | General DataFrame → SQL |
+| [SQLFrame](https://github.com/eakmanrq/sqlframe) | PySpark API | PySpark users → SQL |
+| **polars-db** | **Polars API** | **Polars users → SQL** |
+
+**Zero learning cost** — If you already know Polars, you can query databases
+immediately. No new API to learn.
+
+**Type-safe unified pipelines** — Local processing (Polars) and database queries
+(polars-db) share the same API, eliminating the implicit type coercion, NaN/None
+confusion, and dtype mismatches that plague pandas-based workflows.
+
 ## Installation
 
 ```bash
