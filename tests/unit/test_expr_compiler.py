@@ -26,32 +26,42 @@ def compiler() -> ExprCompiler:
 
 @pytest.mark.unit
 class TestLiterals:
+    """Test compiling literal expressions to sqlglot AST nodes."""
+
     def test_int(self, compiler: ExprCompiler) -> None:
+        """Verify integer literal compiles to ``exp.Literal``."""
         result = compiler.compile(LitExpr(value=42))
         assert isinstance(result, exp.Literal)
         assert result.this == "42"
 
     def test_float(self, compiler: ExprCompiler) -> None:
+        """Verify float literal compiles to ``exp.Literal``."""
         result = compiler.compile(LitExpr(value=3.14))
         assert isinstance(result, exp.Literal)
 
     def test_string(self, compiler: ExprCompiler) -> None:
+        """Verify string literal compiles to ``exp.Literal`` with string flag."""
         result = compiler.compile(LitExpr(value="hello"))
         assert isinstance(result, exp.Literal)
         assert result.is_string
 
     def test_bool(self, compiler: ExprCompiler) -> None:
+        """Verify boolean literal compiles to ``exp.Boolean``."""
         result = compiler.compile(LitExpr(value=True))
         assert isinstance(result, exp.Boolean)
 
     def test_none(self, compiler: ExprCompiler) -> None:
+        """Verify ``None`` literal compiles to ``exp.Null``."""
         result = compiler.compile(LitExpr(value=None))
         assert isinstance(result, exp.Null)
 
 
 @pytest.mark.unit
 class TestColumns:
+    """Tests for compiling column references to sqlglot nodes."""
+
     def test_col(self, compiler: ExprCompiler) -> None:
+        """Verify column reference compiles to ``exp.Column``."""
         result = compiler.compile(ColExpr(name="age"))
         assert isinstance(result, exp.Column)
         sql = result.sql(dialect="postgres")
@@ -60,17 +70,22 @@ class TestColumns:
 
 @pytest.mark.unit
 class TestBinaryOps:
+    """Tests for compiling binary operators to sqlglot AST nodes."""
+
     def test_gt(self, compiler: ExprCompiler) -> None:
+        """Verify greater-than compiles to ``exp.GT``."""
         expr = BinaryExpr(op=">", left=ColExpr(name="age"), right=LitExpr(value=30))
         result = compiler.compile(expr)
         assert isinstance(result, exp.GT)
 
     def test_eq(self, compiler: ExprCompiler) -> None:
+        """Verify equality compiles to ``exp.EQ``."""
         expr = BinaryExpr(op="==", left=ColExpr(name="x"), right=LitExpr(value=1))
         result = compiler.compile(expr)
         assert isinstance(result, exp.EQ)
 
     def test_and(self, compiler: ExprCompiler) -> None:
+        """Verify logical AND compiles to ``exp.And``."""
         expr = BinaryExpr(
             op="and",
             left=BinaryExpr(op=">", left=ColExpr(name="a"), right=LitExpr(value=1)),
@@ -82,12 +97,16 @@ class TestBinaryOps:
 
 @pytest.mark.unit
 class TestUnaryOps:
+    """Tests for compiling unary operators to sqlglot AST nodes."""
+
     def test_not(self, compiler: ExprCompiler) -> None:
+        """Verify NOT compiles to ``exp.Not``."""
         expr = UnaryExpr(op="not", operand=ColExpr(name="active"))
         result = compiler.compile(expr)
         assert isinstance(result, exp.Not)
 
     def test_neg(self, compiler: ExprCompiler) -> None:
+        """Verify negation compiles to ``exp.Neg``."""
         expr = UnaryExpr(op="neg", operand=ColExpr(name="amount"))
         result = compiler.compile(expr)
         assert isinstance(result, exp.Neg)
@@ -95,17 +114,22 @@ class TestUnaryOps:
 
 @pytest.mark.unit
 class TestAggregation:
+    """Tests for compiling aggregation functions to sqlglot nodes."""
+
     def test_sum(self, compiler: ExprCompiler) -> None:
+        """Verify sum compiles to ``exp.Sum``."""
         expr = AggExpr(func="sum", arg=ColExpr(name="amount"))
         result = compiler.compile(expr)
         assert isinstance(result, exp.Sum)
 
     def test_avg(self, compiler: ExprCompiler) -> None:
+        """Verify mean compiles to ``exp.Avg``."""
         expr = AggExpr(func="mean", arg=ColExpr(name="amount"))
         result = compiler.compile(expr)
         assert isinstance(result, exp.Avg)
 
     def test_count(self, compiler: ExprCompiler) -> None:
+        """Verify count compiles to ``exp.Count``."""
         expr = AggExpr(func="count", arg=ColExpr(name="id"))
         result = compiler.compile(expr)
         assert isinstance(result, exp.Count)
@@ -113,7 +137,10 @@ class TestAggregation:
 
 @pytest.mark.unit
 class TestAlias:
+    """Tests for compiling alias expressions to sqlglot nodes."""
+
     def test_alias(self, compiler: ExprCompiler) -> None:
+        """Verify aliased aggregation compiles to ``exp.Alias``."""
         expr = AliasExpr(
             expr=AggExpr(func="sum", arg=ColExpr(name="amount")), alias="total"
         )
@@ -125,7 +152,10 @@ class TestAlias:
 
 @pytest.mark.unit
 class TestCase:
+    """Tests for compiling CASE WHEN expressions."""
+
     def test_case_when(self, compiler: ExprCompiler) -> None:
+        """Verify CASE WHEN with otherwise compiles to ``exp.Case``."""
         expr = CaseExpr(
             cases=(
                 (
@@ -143,17 +173,22 @@ class TestCase:
 
 @pytest.mark.unit
 class TestSpecialFunctions:
+    """Tests for IS NULL, IS NOT NULL, BETWEEN, and IN compilation."""
+
     def test_is_null(self, compiler: ExprCompiler) -> None:
+        """Verify ``is_null`` compiles to ``exp.Is``."""
         expr = FuncExpr(func_name="is_null", args=(ColExpr(name="x"),))
         result = compiler.compile(expr)
         assert isinstance(result, exp.Is)
 
     def test_is_not_null(self, compiler: ExprCompiler) -> None:
+        """Verify ``is_not_null`` compiles to ``exp.Not``."""
         expr = FuncExpr(func_name="is_not_null", args=(ColExpr(name="x"),))
         result = compiler.compile(expr)
         assert isinstance(result, exp.Not)
 
     def test_between(self, compiler: ExprCompiler) -> None:
+        """Verify ``between`` compiles to ``exp.Between``."""
         expr = FuncExpr(
             func_name="between",
             args=(ColExpr(name="x"), LitExpr(value=1), LitExpr(value=10)),
@@ -162,6 +197,7 @@ class TestSpecialFunctions:
         assert isinstance(result, exp.Between)
 
     def test_isin(self, compiler: ExprCompiler) -> None:
+        """Verify ``isin`` compiles to ``exp.In``."""
         expr = FuncExpr(
             func_name="isin",
             args=(ColExpr(name="status"), LitExpr(value="a"), LitExpr(value="b")),
@@ -172,7 +208,10 @@ class TestSpecialFunctions:
 
 @pytest.mark.unit
 class TestWindow:
+    """Tests for compiling window function expressions."""
+
     def test_sum_over_partition(self, compiler: ExprCompiler) -> None:
+        """Verify SUM with PARTITION BY compiles to ``exp.Window``."""
         expr = WindowExpr(
             expr=AggExpr(func="sum", arg=ColExpr(name="amount")),
             partition_by=(ColExpr(name="department"),),
@@ -184,6 +223,7 @@ class TestWindow:
         assert "PARTITION BY" in sql.upper()
 
     def test_window_with_order_by(self, compiler: ExprCompiler) -> None:
+        """Verify window function with ORDER BY clause."""
         expr = WindowExpr(
             expr=AggExpr(func="sum", arg=ColExpr(name="amount")),
             partition_by=(ColExpr(name="dept"),),
@@ -195,6 +235,7 @@ class TestWindow:
         assert "ORDER BY" in sql.upper()
 
     def test_shift_lag(self, compiler: ExprCompiler) -> None:
+        """Verify shift with positive offset compiles to LAG."""
         expr = FuncExpr(
             func_name="shift", args=(ColExpr(name="value"), LitExpr(value=1))
         )
@@ -203,6 +244,7 @@ class TestWindow:
         assert "LAG" in sql.upper()
 
     def test_shift_lead(self, compiler: ExprCompiler) -> None:
+        """Verify shift with negative offset compiles to LEAD."""
         expr = FuncExpr(
             func_name="shift", args=(ColExpr(name="value"), LitExpr(value=-2))
         )
@@ -211,12 +253,14 @@ class TestWindow:
         assert "LEAD" in sql.upper()
 
     def test_rank(self, compiler: ExprCompiler) -> None:
+        """Verify rank function compiles to RANK."""
         expr = FuncExpr(func_name="rank", args=(ColExpr(name="score"),))
         result = compiler.compile(expr)
         sql = result.sql(dialect="postgres")
         assert "RANK" in sql.upper()
 
     def test_row_number(self, compiler: ExprCompiler) -> None:
+        """Verify row_number compiles to ROW_NUMBER."""
         expr = FuncExpr(func_name="row_number", args=(ColExpr(name="id"),))
         result = compiler.compile(expr)
         sql = result.sql(dialect="postgres")
@@ -225,12 +269,16 @@ class TestWindow:
 
 @pytest.mark.unit
 class TestSortExpr:
+    """Tests for compiling sort expressions to sqlglot nodes."""
+
     def test_sort_asc(self, compiler: ExprCompiler) -> None:
+        """Verify ascending sort compiles to ``exp.Ordered``."""
         expr = SortExpr(expr=ColExpr(name="age"), descending=False)
         result = compiler.compile(expr)
         assert isinstance(result, exp.Ordered)
 
     def test_sort_desc(self, compiler: ExprCompiler) -> None:
+        """Verify descending sort compiles to ``exp.Ordered`` with DESC."""
         expr = SortExpr(expr=ColExpr(name="age"), descending=True)
         result = compiler.compile(expr)
         assert isinstance(result, exp.Ordered)

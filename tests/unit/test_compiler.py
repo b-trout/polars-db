@@ -26,12 +26,16 @@ def _compile_sql(op: object) -> str:
 
 @pytest.mark.unit
 class TestTableRef:
+    """Tests for table reference SQL generation."""
+
     def test_simple_table(self) -> None:
+        """Verify SQL for a simple unqualified table reference."""
         sql = _compile_sql(TableRef(name="users"))
         assert "SELECT" in sql.upper()
         assert "users" in sql
 
     def test_schema_qualified(self) -> None:
+        """Verify SQL for a schema-qualified table reference."""
         sql = _compile_sql(TableRef(name="users", schema="public"))
         assert "public" in sql
         assert "users" in sql
@@ -39,7 +43,10 @@ class TestTableRef:
 
 @pytest.mark.unit
 class TestFilter:
+    """Tests for WHERE clause generation."""
+
     def test_simple_filter(self) -> None:
+        """Verify WHERE clause from a single filter predicate."""
         op = FilterOp(
             child=TableRef(name="users"),
             predicate=BinaryExpr(
@@ -52,6 +59,7 @@ class TestFilter:
         assert "30" in sql
 
     def test_chained_filters(self) -> None:
+        """Verify WHERE clause from chained filter predicates."""
         op = FilterOp(
             child=FilterOp(
                 child=TableRef(name="users"),
@@ -69,7 +77,10 @@ class TestFilter:
 
 @pytest.mark.unit
 class TestSelect:
+    """Tests for SELECT column projection."""
+
     def test_select_columns(self) -> None:
+        """Verify column projection in SELECT clause."""
         op = SelectOp(
             child=TableRef(name="users"),
             exprs=(ColExpr(name="name"), ColExpr(name="age")),
@@ -81,7 +92,10 @@ class TestSelect:
 
 @pytest.mark.unit
 class TestSort:
+    """Tests for ORDER BY clause generation."""
+
     def test_sort_asc(self) -> None:
+        """Verify ORDER BY for ascending sort."""
         op = SortOp(
             child=TableRef(name="users"),
             by=(ColExpr(name="age"),),
@@ -91,6 +105,7 @@ class TestSort:
         assert "ORDER BY" in sql.upper()
 
     def test_sort_desc(self) -> None:
+        """Verify ORDER BY with DESC for descending sort."""
         op = SortOp(
             child=TableRef(name="users"),
             by=(ColExpr(name="age"),),
@@ -102,13 +117,17 @@ class TestSort:
 
 @pytest.mark.unit
 class TestLimit:
+    """Tests for LIMIT and OFFSET clause generation."""
+
     def test_limit(self) -> None:
+        """Verify LIMIT clause generation."""
         op = LimitOp(child=TableRef(name="users"), n=10)
         sql = _compile_sql(op)
         assert "LIMIT" in sql.upper()
         assert "10" in sql
 
     def test_limit_offset(self) -> None:
+        """Verify LIMIT with OFFSET clause generation."""
         op = LimitOp(child=TableRef(name="users"), n=10, offset=5)
         sql = _compile_sql(op)
         assert "LIMIT" in sql.upper()
@@ -117,7 +136,10 @@ class TestLimit:
 
 @pytest.mark.unit
 class TestSelectFilterSort:
+    """Tests for combined SELECT, WHERE, and ORDER BY queries."""
+
     def test_combined_query(self) -> None:
+        """Verify SQL with SELECT, WHERE, and ORDER BY combined."""
         op = SortOp(
             child=SelectOp(
                 child=FilterOp(
@@ -139,7 +161,10 @@ class TestSelectFilterSort:
 
 @pytest.mark.unit
 class TestGroupBy:
+    """Tests for GROUP BY with aggregation."""
+
     def test_group_by_agg(self) -> None:
+        """Verify GROUP BY with SUM aggregation."""
         op = GroupByOp(
             child=TableRef(name="orders"),
             by=(ColExpr(name="user_id"),),
@@ -156,7 +181,10 @@ class TestGroupBy:
 
 @pytest.mark.unit
 class TestJoin:
+    """Tests for JOIN SQL generation."""
+
     def test_inner_join(self) -> None:
+        """Verify INNER JOIN SQL generation."""
         op = JoinOp(
             left=TableRef(name="users"),
             right=TableRef(name="orders"),
@@ -169,6 +197,7 @@ class TestJoin:
         assert "orders" in sql
 
     def test_left_join(self) -> None:
+        """Verify LEFT JOIN SQL generation."""
         op = JoinOp(
             left=TableRef(name="users"),
             right=TableRef(name="orders"),
@@ -179,6 +208,7 @@ class TestJoin:
         assert "LEFT" in sql.upper()
 
     def test_semi_join(self) -> None:
+        """Verify semi join compiles as EXISTS subquery."""
         op = JoinOp(
             left=TableRef(name="users"),
             right=TableRef(name="orders"),
@@ -189,6 +219,7 @@ class TestJoin:
         assert "EXISTS" in sql.upper()
 
     def test_anti_join(self) -> None:
+        """Verify anti join compiles as NOT EXISTS subquery."""
         op = JoinOp(
             left=TableRef(name="users"),
             right=TableRef(name="orders"),
@@ -202,6 +233,8 @@ class TestJoin:
 
 @pytest.mark.unit
 class TestWithColumnsWindow:
+    """Tests for with_columns window function SQL generation."""
+
     def test_with_columns_window_function(self) -> None:
         """Test with_columns adding a window function.
 
@@ -235,6 +268,8 @@ class TestWithColumnsWindow:
 
 @pytest.mark.unit
 class TestComplexQuery:
+    """Tests for complex multi-operation query compilation."""
+
     def test_filter_join_groupby_sort_limit(self) -> None:
         """Test a complex multi-operation query chain."""
         op = LimitOp(

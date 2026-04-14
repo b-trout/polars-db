@@ -21,9 +21,12 @@ def compiler() -> QueryCompiler:
 
 @pytest.mark.unit
 class TestJoinValidator:
+    """Tests for join cardinality validation query generation."""
+
     def test_mm_returns_empty(
         self, validator: JoinValidator, compiler: QueryCompiler
     ) -> None:
+        """Verify ``m:m`` validation produces no validation queries."""
         op = JoinOp(
             left=TableRef(name="users"),
             right=TableRef(name="orders"),
@@ -36,6 +39,7 @@ class TestJoinValidator:
     def test_1m_checks_left(
         self, validator: JoinValidator, compiler: QueryCompiler
     ) -> None:
+        """Verify ``1:m`` validation produces a uniqueness check on the left side."""
         op = JoinOp(
             left=TableRef(name="users"),
             right=TableRef(name="orders"),
@@ -53,6 +57,7 @@ class TestJoinValidator:
     def test_m1_checks_right(
         self, validator: JoinValidator, compiler: QueryCompiler
     ) -> None:
+        """Verify ``m:1`` validation produces a uniqueness check on the right side."""
         op = JoinOp(
             left=TableRef(name="users"),
             right=TableRef(name="orders"),
@@ -66,6 +71,7 @@ class TestJoinValidator:
     def test_11_checks_both(
         self, validator: JoinValidator, compiler: QueryCompiler
     ) -> None:
+        """Verify ``1:1`` validation produces uniqueness checks on both sides."""
         op = JoinOp(
             left=TableRef(name="users"),
             right=TableRef(name="orders"),
@@ -79,6 +85,7 @@ class TestJoinValidator:
     def test_left_on_right_on(
         self, validator: JoinValidator, compiler: QueryCompiler
     ) -> None:
+        """Verify validation with ``left_on``/``right_on`` key specification."""
         op = JoinOp(
             left=TableRef(name="users"),
             right=TableRef(name="orders"),
