@@ -76,6 +76,12 @@ class BigQueryBackend(Backend):
         # (which emits lowercase identifiers). Build the statement with the
         # sqlglot AST so that ``table`` is emitted as a properly escaped
         # string literal instead of being interpolated via f-string.
+        #
+        # BigQuery's ``INFORMATION_SCHEMA.COLUMNS`` is already dataset-scoped
+        # (callers qualify it implicitly via the active dataset), so the
+        # ``table_schema`` cross-schema filter used by the base implementation
+        # is unnecessary here.  Results are ordered by ``ordinal_position``
+        # for a deterministic column order.
         return (
             exp.Select(expressions=[exp.Column(this=exp.to_identifier("column_name"))])
             .from_(
@@ -90,6 +96,7 @@ class BigQueryBackend(Backend):
                     expression=exp.Literal.string(table),
                 )
             )
+            .order_by(exp.Column(this=exp.to_identifier("ordinal_position")))
             .sql(dialect=self.dialect)
         )
 

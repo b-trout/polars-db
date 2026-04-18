@@ -265,8 +265,18 @@ class QueryCompiler:
         # Detect whether the left/right outputs share any non-USING column
         # names. If not, fall back to the simple form so existing SQL tests
         # and integrations continue to emit the minimal JOIN form.
+        #
+        # T-SQL (SQL Server) does not support the ``USING (...)`` JOIN clause
+        # and rejects it with syntax error 102. When the backend dialect is
+        # ``tsql`` and the user supplied ``on=`` keys, force the explicit
+        # projection path so we can emit an equivalent ``ON left.k = right.k``
+        # condition while preserving the polars-style USING merge semantics
+        # (key column appears once, taken from the left side).
         collisions = self._collision_columns(op)
-        if not collisions:
+        dialect = self._expr_compiler._backend.dialect
+        tsql_using = dialect == "tsql" and on is not None
+        needs_explicit = bool(collisions) or tsql_using
+        if not needs_explicit:
             left_sql = self.compile(left)
             right_sql = self._ensure_subquery(self.compile(right))
             if on is not None:
@@ -275,9 +285,10 @@ class QueryCompiler:
             on_expr = self._compile_join_on_different(left_on, right_on)
             return left_sql.join(right_sql, on=on_expr, join_type=join_type)
 
-        # Collision present: wrap both sides in aliased subqueries and
-        # emit an explicit projection that qualifies each column and
-        # suffixes the right-side duplicates.
+        # Explicit-projection path: wrap both sides in aliased subqueries and
+        # emit a qualified SELECT list. Used when right-side duplicates need
+        # the suffix, and also unconditionally on T-SQL when ``on=`` is given
+        # so we can replace ``USING`` with an ``ON`` condition.
         left_sub = self._ensure_subquery(self.compile(left))
         right_sub = self._ensure_subquery(self.compile(right))
         left_alias = left_sub.alias_or_name
@@ -288,10 +299,15 @@ class QueryCompiler:
             left_alias=left_alias,
             right_alias=right_alias,
             collisions=collisions,
+            tsql_using=tsql_using,
         )
 
         select = exp.Select(expressions=projection).from_(left_sub)
         if on is not None:
+            if tsql_using:
+                # T-SQL does not support USING; emit ON a.k = b.k instead.
+                on_expr = self._compile_join_on_same_keys(on, left_alias, right_alias)
+                return select.join(right_sub, on=on_expr, join_type=join_type)
             using_cols = [self._expr_compiler.compile(e) for e in on]
             return select.join(right_sub, using=using_cols, join_type=join_type)
 
@@ -299,6 +315,32 @@ class QueryCompiler:
             left_on, right_on, left_alias, right_alias
         )
         return select.join(right_sub, on=on_expr, join_type=join_type)
+
+    def _compile_join_on_same_keys(
+        self,
+        on: tuple[Expr, ...],
+        left_alias: str,
+        right_alias: str,
+    ) -> exp.Expression:
+        """Emit ``ON left.k = right.k`` for each key.
+
+        This is the T-SQL replacement for ``USING (k, ...)``, which the
+        dialect does not recognise.
+        """
+        conditions = [
+            exp.EQ(
+                this=exp.Column(
+                    table=exp.to_identifier(left_alias),
+                    this=exp.to_identifier(self._extract_col_name(e)),
+                ),
+                expression=exp.Column(
+                    table=exp.to_identifier(right_alias),
+                    this=exp.to_identifier(self._extract_col_name(e)),
+                ),
+            )
+            for e in on
+        ]
+        return self._and_chain(conditions)
 
     def _compile_join_on_qualified(
         self,
@@ -333,8 +375,16 @@ class QueryCompiler:
         left_alias: str,
         right_alias: str,
         collisions: set[str],
+        tsql_using: bool = False,
     ) -> list[exp.Expression]:
-        """Build the explicit SELECT list for a collision-resolving JOIN."""
+        """Build the explicit SELECT list for a collision-resolving JOIN.
+
+        When ``tsql_using`` is true the backend is emitting ``ON`` in place
+        of ``USING``; the USING key column therefore has to be explicitly
+        taken from the left side (unqualified ``k`` would be ambiguous),
+        while the right-side copy is still dropped to preserve polars
+        USING-merge semantics.
+        """
         left_cols = self._resolve_columns(op.left)
         right_cols = self._resolve_columns(op.right)
         using_keys = self._using_key_names(op)
@@ -342,11 +392,12 @@ class QueryCompiler:
 
         cols: list[exp.Expression] = []
 
-        # Left side: USING keys stay unqualified (they refer to the merged
-        # column produced by USING); the remainder are qualified with the
-        # left alias.
+        # Left side: USING keys normally stay unqualified (they refer to the
+        # merged column produced by ``USING``). On T-SQL we have no ``USING``
+        # to merge them, so qualify them with the left alias explicitly. The
+        # remaining columns are always qualified with the left alias.
         for c in left_cols:
-            if c in using_keys:
+            if c in using_keys and not tsql_using:
                 cols.append(exp.Column(this=exp.to_identifier(c)))
             else:
                 cols.append(
@@ -356,9 +407,9 @@ class QueryCompiler:
                     )
                 )
 
-        # Right side: skip USING keys (already emitted), qualify the rest,
-        # alias duplicates to `<name><suffix>` so downstream ops see a
-        # unique output name.
+        # Right side: skip USING keys (already emitted from the left side,
+        # or merged by ``USING``), qualify the rest, alias duplicates to
+        # ``<name><suffix>`` so downstream ops see a unique output name.
         for c in right_cols:
             if c in using_keys:
                 continue
