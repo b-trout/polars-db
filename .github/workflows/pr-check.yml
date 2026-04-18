@@ -44,7 +44,11 @@ jobs:
         with:
           python-version: '3.13'
       - name: Install dependencies
-        run: uv sync --all-groups
+        # Include the `sqlite` extra so the in-memory ADBC SQLite
+        # smoke test in tests/unit/test_sqlite_backend.py exercises
+        # the real driver.  Other extras are still handled per-backend
+        # in the integration-test matrix below.
+        run: uv sync --all-groups --extra sqlite
       - name: Run unit tests
         run: uv run poe test-unit
       - name: Upload coverage to Codecov
@@ -77,7 +81,7 @@ jobs:
             extras: ''
           - backend: sqlite
             compose_service: ''
-            extras: ''
+            extras: sqlite
     env:
       POLARS_DB_TEST_BACKEND: ${{ matrix.backend }}
     steps:

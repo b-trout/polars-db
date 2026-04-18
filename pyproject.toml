@@ -41,7 +41,8 @@ dependencies = [
 [project.optional-dependencies]
 bigquery = ["google-cloud-bigquery>=3.0.0"]
 postgres = [
-    "psycopg2-binary>=2.9.11",
+    "adbc-driver-postgresql>=1.10.0",
+    "adbc-driver-manager>=1.10.0",
 ]
 mysql = [
     "pymysql>=1.1.2",
@@ -49,6 +50,10 @@ mysql = [
 ]
 sqlserver = [
     "pymssql>=2.3.13",
+]
+sqlite = [
+    "adbc-driver-sqlite>=1.10.0",
+    "adbc-driver-manager>=1.10.0",
 ]
 
 [project.urls]
