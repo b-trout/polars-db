@@ -229,6 +229,47 @@ class TestWindowCumulative:
 
 
 @pytest.mark.integration
+class TestWindowFrameSpec:
+    """Tests for explicit window frame specifications."""
+
+    def test_rows_preceding(self, connection: Connection) -> None:
+        """Verify ROWS BETWEEN N PRECEDING AND CURRENT ROW works."""
+        result = (
+            connection.table("orders")
+            .with_columns(
+                pdb.col("amount")
+                .sum()
+                .over("status", order_by="id", frame=("rows", -1, 0))
+                .alias("rolling_sum"),
+            )
+            .select("id", "status", "amount", "rolling_sum")
+            .collect()
+        )
+        assert "rolling_sum" in result.columns
+        assert len(result) == 6
+
+    def test_rows_full_range(self, connection: Connection) -> None:
+        """Verify ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING."""
+        result = (
+            connection.table("orders")
+            .with_columns(
+                pdb.col("amount")
+                .sum()
+                .over(
+                    "status",
+                    order_by="id",
+                    frame=("rows", "unbounded", "unbounded"),
+                )
+                .alias("partition_total"),
+            )
+            .select("id", "status", "amount", "partition_total")
+            .collect()
+        )
+        assert "partition_total" in result.columns
+        assert len(result) == 6
+
+
+@pytest.mark.integration
 class TestWindowGlobal:
     """Tests for window functions without PARTITION BY."""
 

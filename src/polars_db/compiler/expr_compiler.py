@@ -14,6 +14,7 @@ from polars_db.expr import (
     CaseExpr,
     ColExpr,
     Expr,
+    FrameSpec,
     FuncExpr,
     LitExpr,
     SortExpr,
@@ -120,7 +121,10 @@ class ExprCompiler:
                 return self._agg_func(func, self.compile(arg))
 
             case WindowExpr(
-                expr=inner_expr, partition_by=partition_by, order_by=order_by
+                expr=inner_expr,
+                partition_by=partition_by,
+                order_by=order_by,
+                frame=frame,
             ):
                 inner = self.compile(inner_expr)
                 pb = [self.compile(e) for e in partition_by]
@@ -128,15 +132,12 @@ class ExprCompiler:
                 window = exp.Window(this=inner, partition_by=pb)
                 if ob:
                     window.set("order", exp.Order(expressions=ob))
-                if _is_cumulative(inner_expr):
+                if frame is not None:
+                    window.set("spec", _build_window_spec(frame))
+                elif _is_cumulative(inner_expr):
                     window.set(
                         "spec",
-                        exp.WindowSpec(
-                            kind="ROWS",
-                            start="UNBOUNDED",
-                            start_side="PRECEDING",
-                            end="CURRENT ROW",
-                        ),
+                        _build_window_spec(("rows", "unbounded", 0)),
                     )
                 return window
 
@@ -291,6 +292,51 @@ class ExprCompiler:
             like_pattern = exp.Concat(expressions=[exp.Literal.string("%"), pattern])
 
         return exp.Like(this=col, expression=like_pattern)
+
+
+def _build_window_spec(frame: FrameSpec) -> exp.WindowSpec:
+    """Convert a ``(kind, start, end)`` tuple to a SQLGlot ``WindowSpec``.
+
+    Parameters
+    ----------
+    frame : FrameSpec
+        Tuple of ``(kind, start, end)`` where *kind* is ``"rows"`` or
+        ``"range"``, *start*/*end* are ``int`` or ``"unbounded"``.
+        Negative ints mean PRECEDING, positive mean FOLLOWING, 0 means
+        CURRENT ROW.
+    """
+    kind_str = frame[0].upper()
+    start_raw, end_raw = frame[1], frame[2]
+
+    kwargs: dict[str, str] = {"kind": kind_str}
+
+    # -- start bound --
+    if start_raw == "unbounded":
+        kwargs["start"] = "UNBOUNDED"
+        kwargs["start_side"] = "PRECEDING"
+    elif start_raw == 0:
+        kwargs["start"] = "CURRENT ROW"
+    elif isinstance(start_raw, int) and start_raw < 0:
+        kwargs["start"] = str(abs(start_raw))
+        kwargs["start_side"] = "PRECEDING"
+    else:
+        kwargs["start"] = str(start_raw)
+        kwargs["start_side"] = "FOLLOWING"
+
+    # -- end bound --
+    if end_raw == "unbounded":
+        kwargs["end"] = "UNBOUNDED"
+        kwargs["end_side"] = "FOLLOWING"
+    elif end_raw == 0:
+        kwargs["end"] = "CURRENT ROW"
+    elif isinstance(end_raw, int) and end_raw > 0:
+        kwargs["end"] = str(end_raw)
+        kwargs["end_side"] = "FOLLOWING"
+    elif isinstance(end_raw, int):
+        kwargs["end"] = str(abs(end_raw))
+        kwargs["end_side"] = "PRECEDING"
+
+    return exp.WindowSpec(**kwargs)
 
 
 def _is_cumulative(expr: Expr) -> bool:

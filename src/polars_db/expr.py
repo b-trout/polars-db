@@ -13,6 +13,8 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     import builtins
 
+FrameSpec = tuple[str, int | str, int | str]
+
 # ---------------------------------------------------------------------------
 # Structural comparison helpers
 # ---------------------------------------------------------------------------
@@ -147,6 +149,7 @@ class Expr:
         self,
         *partition_by: builtins.str | Expr,
         order_by: builtins.str | Expr | list[builtins.str | Expr] | None = None,
+        frame: FrameSpec | None = None,
     ) -> WindowExpr:
         pb = tuple(ColExpr(name=e) if isinstance(e, str) else e for e in partition_by)
         ob: tuple[Expr, ...] | None = None
@@ -154,7 +157,7 @@ class Expr:
             if isinstance(order_by, (str, Expr)):
                 order_by = [order_by]
             ob = tuple(ColExpr(name=e) if isinstance(e, str) else e for e in order_by)
-        return WindowExpr(expr=self, partition_by=pb, order_by=ob)
+        return WindowExpr(expr=self, partition_by=pb, order_by=ob, frame=frame)
 
     def shift(self, n: int = 1) -> FuncExpr:
         return FuncExpr(func_name="shift", args=(self, LitExpr(value=n)))
@@ -275,6 +278,7 @@ class WindowExpr(Expr):
     expr: Expr
     partition_by: tuple[Expr, ...]
     order_by: tuple[Expr, ...] | None = None
+    frame: FrameSpec | None = None
 
 
 @dataclass(frozen=True, eq=False)
