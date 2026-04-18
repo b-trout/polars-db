@@ -1,0 +1,65 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+## [Unreleased]
+
+### Bug Fixes
+
+- Resolve MySQL schema case sensitivity and SQL Server ORDER BY requirement([d232d32](https://github.com/b-trout/polars-db/commit/d232d32a03d83be2ad36ce1e4ef5225299d865a1))
+- Add aliases to derived tables in SQL compiler([d459c88](https://github.com/b-trout/polars-db/commit/d459c882d96af5fa1148992ee98703ed48c69c65))
+- Rewrite PostgreSQL backend to use native psycopg2 driver([2dd4856](https://github.com/b-trout/polars-db/commit/2dd48562305fbed84f217e387c6b2b6be43aba1a))
+- Rewrite DuckDB and SQLite backends to use native drivers([6e4d47a](https://github.com/b-trout/polars-db/commit/6e4d47a2049e391058802b9280a2441063b84d18))
+
+### CI/CD
+
+- Integrate Codecov for coverage reporting([311eeb0](https://github.com/b-trout/polars-db/commit/311eeb022d6900df7f90fedeb26032d0d90ff0f3))
+- Add 3-stage pipeline with per-backend integration tests (#23)([7037d8b](https://github.com/b-trout/polars-db/commit/7037d8b7b25c8216ca17b410ad8dd8d88ccc4383))
+- Add GitHub Actions PR check workflow using poe ci([b2d2b28](https://github.com/b-trout/polars-db/commit/b2d2b28110bdd4dd0022dade0c988c3be7ab084f))
+
+### Documentation
+
+- Add CI, Python version, and license badges to README([6800b82](https://github.com/b-trout/polars-db/commit/6800b82cc56a1055bbf21d182777939da7704fdf))
+- Add cumulative window function example to README([496ebe3](https://github.com/b-trout/polars-db/commit/496ebe3060d404b14af984d09aebdcd84bb7e5b6))
+- Add motivation section to README([308c96f](https://github.com/b-trout/polars-db/commit/308c96f81c973962fadc11e129384393271a199d))
+- Add comprehensive README with install, usage, and dev guide([bc7c526](https://github.com/b-trout/polars-db/commit/bc7c526fa2f46919cf0a2b6bdba4dc0b4cbcb391))
+- Add 14 Architecture Decision Records (ADRs)([ba65ce7](https://github.com/b-trout/polars-db/commit/ba65ce716c6e52ca7a35755d6e59fe8e71417b7b))
+- Add NumPy-style docstrings to all test classes and methods([5ed103c](https://github.com/b-trout/polars-db/commit/5ed103c1db2dbc4d6985d5d41d769edec4a4b0b4))
+- Add pull request template([c95ea8b](https://github.com/b-trout/polars-db/commit/c95ea8b243aa637b9eb832e06791983b9b5ad28f))
+
+### Features
+
+- Add explicit frame specification to over() API([b924567](https://github.com/b-trout/polars-db/commit/b9245673073adf4be1afb8cb6ba1703093902ef2))
+- Add order_by to over(), dense_rank, and cumulative window functions([b299797](https://github.com/b-trout/polars-db/commit/b299797b4a34cf2b326d3ba8d9df4e90ce720a99))
+- Add BigQuery emulator integration tests([c61d66c](https://github.com/b-trout/polars-db/commit/c61d66cbfc4edffedca4b0db66c55d27214484b3))
+- Remove connectorx and rewrite all backends to use native drivers([0c070b6](https://github.com/b-trout/polars-db/commit/0c070b6cc76e523bb4d8ad04aeb6eb03860316dc))
+- Configure Docker-in-Docker build context and use official Docker engine([3a2cb28](https://github.com/b-trout/polars-db/commit/3a2cb2895938a3b7837ebf93d75dc711860e097a))
+- Add Docker-in-Docker feature to devcontainer([7fedf86](https://github.com/b-trout/polars-db/commit/7fedf864aba879881b56d36209e7ac0279720efb))
+- Add type mapping and namespace function compilation([ad21c9c](https://github.com/b-trout/polars-db/commit/ad21c9c8b6902b01e0b9afffe0346cf3256a75c6))
+- Add integration test infrastructure([368a4cb](https://github.com/b-trout/polars-db/commit/368a4cbe91c4edc8937058c41d5cf106a685b0ad))
+- Add DuckDB, MySQL, SQLite, SQL Server, and BigQuery backends([cd06292](https://github.com/b-trout/polars-db/commit/cd062925ba44292d17a8900a1a7ee2dec6916d76))
+- Add window function tests and fix shift/lead compilation([8acc431](https://github.com/b-trout/polars-db/commit/8acc431dda013e36dfc4123064660d0663c27707))
+- Implement Optimizer and JoinValidator with tests([06f4eeb](https://github.com/b-trout/polars-db/commit/06f4eeb06ce0923b3792d3d09387a176244c14c4))
+- Add Connection, LazyFrame, public API, and unit tests([2600258](https://github.com/b-trout/polars-db/commit/2600258a0c37f629d0297a515a632359c0581e9b))
+- Add Connection, LazyFrame, types stub, and public API([94a5880](https://github.com/b-trout/polars-db/commit/94a5880d6cc2286ae4b3e871ecaf96a470487aec))
+- Add Backend ABC, ExprCompiler, QueryCompiler, and Optimizer([e1ec7b3](https://github.com/b-trout/polars-db/commit/e1ec7b3f64a457d5bb08a00bb1d1752d912b4a28))
+- Add Expr AST, Op tree nodes, and exception hierarchy([fce4f4a](https://github.com/b-trout/polars-db/commit/fce4f4a011eb39220d370b379674f81baac55713))
+- Add connectorx, pytest plugins, and test markers to project config([43b1f34](https://github.com/b-trout/polars-db/commit/43b1f34de00a14b17d620319db34666bf048483c))
+- Add SSH keys bind mount to devcontainer([ce65087](https://github.com/b-trout/polars-db/commit/ce6508701afe6af217f2cbe19412b704e8f763f9))
+- Add .claude.json bind mount to devcontainer([5543218](https://github.com/b-trout/polars-db/commit/5543218011e86f73ba18828d23a9e42707144dc7))
+- Add devcontainer configuration([fd2db15](https://github.com/b-trout/polars-db/commit/fd2db1598b5d859ebffb02af9134ebbfa0d718a2))
+- Add Dockerfile and package structure([eb5bc85](https://github.com/b-trout/polars-db/commit/eb5bc85ecee8a6ac819f55536b6fc5c0f7107448))
+
+### Miscellaneous
+
+- Add dev tooling configuration([22a4e27](https://github.com/b-trout/polars-db/commit/22a4e27d3fc76a77cb42b648e04cbdfe6780e3e8))
+- Update .gitignore([5f53340](https://github.com/b-trout/polars-db/commit/5f53340ec71cb0ee8a08a5ed3a398d939b9424ae))
+
+### Testing
+
+- Add edge case integration tests for window functions([992dc61](https://github.com/b-trout/polars-db/commit/992dc61d197d1f3bd9d10f78f43e47e0f12bbb95))
+
+### Merge
+
+- Resolve test_window.py conflict with main([bbed200](https://github.com/b-trout/polars-db/commit/bbed200fa5229cd1ffe6b285ec676098a2d07204))
+
