@@ -134,7 +134,17 @@ def test_create_connection_calls_adbc_with_autocommit() -> None:
     fake_mod = MagicMock()
     fake_mod.connect.return_value = "conn-sentinel"
 
-    with patch.dict("sys.modules", {"adbc_driver_postgresql.dbapi": fake_mod}):
+    # Patch both the parent package and the submodule so the
+    # ``import adbc_driver_postgresql.dbapi as adbc_pg`` statement
+    # resolves without the real wheel being installed (CI unit-test
+    # job does not pull the ``postgres`` extra).
+    with patch.dict(
+        "sys.modules",
+        {
+            "adbc_driver_postgresql": MagicMock(),
+            "adbc_driver_postgresql.dbapi": fake_mod,
+        },
+    ):
         result = PostgresBackend._create_connection("postgresql://u:p@host/db")
 
     assert result == "conn-sentinel"
