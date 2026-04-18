@@ -128,6 +128,10 @@ class SQLServerBackend(Backend):
     def function_mapping(self) -> dict[str, str]:
         return {"string_agg": "STRING_AGG"}
 
+    def current_schema_sql_expr(self) -> exp.Expression:
+        """SQL Server uses ``SCHEMA_NAME()`` for the current default schema."""
+        return exp.Anonymous(this="SCHEMA_NAME")
+
     def build_explain_sql(self, sql: str, *, analyze: bool = False) -> str:
         msg = (
             "SQL Server does not support EXPLAIN. "
