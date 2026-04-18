@@ -76,7 +76,8 @@ class Connection:
         """Query ``INFORMATION_SCHEMA`` for column names."""
         sql = self.backend.schema_query(table)
         result = self.execute(sql)
-        return result["column_name"].to_list()
+        # Use positional access: some backends return COLUMN_NAME (uppercase)
+        return result.to_series(0).to_list()
 
     def refresh_schema(self, table: str | None = None) -> None:
         """Invalidate schema cache."""
