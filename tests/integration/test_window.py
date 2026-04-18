@@ -267,3 +267,111 @@ class TestWindowFrameSpec:
         )
         assert "partition_total" in result.columns
         assert len(result) == 6
+
+
+@pytest.mark.integration
+class TestWindowGlobal:
+    """Tests for window functions without PARTITION BY."""
+
+    def test_sum_over_all_rows(self, connection: Connection) -> None:
+        """Verify SUM() OVER () computes across all rows."""
+        result = (
+            connection.table("orders")
+            .with_columns(
+                pdb.col("amount").sum().over().alias("grand_total"),
+            )
+            .select("id", "amount", "grand_total")
+            .collect()
+        )
+        assert "grand_total" in result.columns
+        assert len(result) == 6
+        # All rows should have the same grand total
+        totals = result["grand_total"].to_list()
+        assert all(t == totals[0] for t in totals)
+
+    def test_count_over_all_rows(self, connection: Connection) -> None:
+        """Verify COUNT() OVER () returns total row count for every row."""
+        result = (
+            connection.table("orders")
+            .with_columns(
+                pdb.col("id").count().over().alias("total_count"),
+            )
+            .select("id", "total_count")
+            .collect()
+        )
+        assert "total_count" in result.columns
+        counts = result["total_count"].to_list()
+        assert all(c == 6 for c in counts)
+
+
+@pytest.mark.integration
+class TestWindowMultiple:
+    """Tests for multiple window functions in a single query."""
+
+    def test_two_windows_same_partition(self, connection: Connection) -> None:
+        """Verify two window functions with the same partition key."""
+        result = (
+            connection.table("orders")
+            .with_columns(
+                pdb.col("amount").sum().over("status").alias("status_sum"),
+                pdb.col("amount").max().over("status").alias("status_max"),
+            )
+            .select("id", "status", "amount", "status_sum", "status_max")
+            .collect()
+        )
+        assert "status_sum" in result.columns
+        assert "status_max" in result.columns
+        assert len(result) == 6
+
+    def test_two_windows_different_partitions(self, connection: Connection) -> None:
+        """Verify two window functions with different partition keys."""
+        result = (
+            connection.table("orders")
+            .with_columns(
+                pdb.col("amount").sum().over("status").alias("status_sum"),
+                pdb.col("amount").sum().over("user_id").alias("user_sum"),
+            )
+            .select("id", "status", "user_id", "amount", "status_sum", "user_sum")
+            .collect()
+        )
+        assert "status_sum" in result.columns
+        assert "user_sum" in result.columns
+        assert len(result) == 6
+
+
+@pytest.mark.integration
+class TestWindowInSubquery:
+    """Tests for window functions used in subqueries."""
+
+    def test_filter_after_window(self, connection: Connection) -> None:
+        """Verify filtering on a window function result works.
+
+        This forces the window into a subquery, which is important
+        for SQL Server compatibility (ORDER BY in subqueries).
+        """
+        result = (
+            connection.table("orders")
+            .with_columns(
+                pdb.col("amount").sum().over("status").alias("status_total"),
+            )
+            .filter(pdb.col("status_total") > 100)
+            .select("id", "status", "amount", "status_total")
+            .collect()
+        )
+        assert "status_total" in result.columns
+        # Only partitions with total > 100 should remain
+        assert len(result) > 0
+
+    def test_sort_after_window(self, connection: Connection) -> None:
+        """Verify sorting by a window function result works."""
+        result = (
+            connection.table("orders")
+            .with_columns(
+                pdb.col("amount").sum().over("status").alias("status_total"),
+            )
+            .sort("status_total", descending=True)
+            .select("id", "status", "amount", "status_total")
+            .collect()
+        )
+        assert "status_total" in result.columns
+        assert len(result) == 6
