@@ -16,10 +16,15 @@ if TYPE_CHECKING:
     from polars_db.connection import Connection
 
 # Immutable backend connection configuration
-BACKEND_CONFIG: dict[str, dict[str, str]] = {
+BACKEND_CONFIG: dict[str, dict[str, object]] = {
     "postgres": {"conn_str": "postgresql://test:test@localhost:5432/testdb"},
     "mysql": {"conn_str": "mysql://root:test@localhost:3306/testdb"},
-    "sqlserver": {"conn_str": "mssql://sa:Test@12345@localhost:1433/testdb"},
+    "sqlserver": {
+        "conn_str": "mssql://sa:Test@12345@localhost:1433/testdb",
+        # CI needs the test DB to be auto-created on a fresh container.
+        # See ADR-0013 for the rationale behind the opt-in flag.
+        "create_if_missing": True,
+    },
     "duckdb": {"conn_str": "duckdb:///:memory:"},
     "sqlite": {"conn_str": "sqlite:///:memory:"},
     "bigquery": {

@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking**: `pdb.connect(...)` no longer auto-creates SQL Server databases by default. Pass `create_if_missing=True` to restore the prior behavior. Fixes typo-induced accidental database creation in production. (#4)
+
 ### Bug Fixes
 
 - Resolve MySQL schema case sensitivity and SQL Server ORDER BY requirement([d232d32](https://github.com/b-trout/polars-db/commit/d232d32a03d83be2ad36ce1e4ef5225299d865a1))
