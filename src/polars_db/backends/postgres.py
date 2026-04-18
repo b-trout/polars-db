@@ -13,7 +13,16 @@ if TYPE_CHECKING:
 
 
 class PostgresBackend(Backend):
-    """PostgreSQL via native psycopg2 driver."""
+    """PostgreSQL via native psycopg2 driver.
+
+    .. warning::
+        A single backend instance caches one connection in
+        ``self._conn``/``self._conn_str``. The cache is not thread-safe —
+        concurrent ``collect()`` calls from multiple threads on the same
+        :class:`~polars_db.connection.Connection` can race on the cached
+        cursor and cross-contaminate result sets. Use one connection per
+        thread, or serialize access externally.
+    """
 
     def __init__(self) -> None:
         self._conn: connection | None = None

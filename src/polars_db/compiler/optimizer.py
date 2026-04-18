@@ -114,11 +114,6 @@ class Optimizer:
 
         return inner
 
-    @staticmethod
-    def _is_select_star(select: exp.Select) -> bool:
-        exprs = select.expressions
-        return len(exprs) == 1 and isinstance(exprs[0], exp.Star)
-
 
 class JoinValidator:
     """Validate JOIN cardinality constraints before execution."""
@@ -169,7 +164,11 @@ class JoinValidator:
             for k in keys
         ]
         inner = compiler.compile(op)  # type: ignore[arg-type]
-        sub = inner.subquery() if isinstance(inner, exp.Select) else inner
+        # MySQL rejects unaliased derived tables ("Every derived table must
+        # have its own alias", error 1248); T-SQL tolerates them only in
+        # some contexts. Use a fixed private alias so emitted SQL is valid
+        # across all dialects.
+        sub = inner.subquery("_v") if isinstance(inner, exp.Select) else inner
 
         select = exp.Select(expressions=key_cols).from_(sub)
         select = select.group_by(*key_cols)
