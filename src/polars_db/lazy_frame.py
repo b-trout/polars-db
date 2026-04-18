@@ -119,8 +119,14 @@ class LazyFrame:
         right_on: str | Expr | list[str | Expr] | None = None,
         how: str = "inner",
         validate: str = "m:m",
+        suffix: str = "_right",
     ) -> LazyFrame:
-        """Join with another ``LazyFrame``."""
+        """Join with another ``LazyFrame``.
+
+        When both sides share non-key column names, the right-hand columns
+        receive ``suffix`` (default ``"_right"``) to disambiguate, matching
+        polars semantics.
+        """
         if on is not None and (left_on is not None or right_on is not None):
             msg = "Cannot specify both 'on' and 'left_on'/'right_on'"
             raise ValueError(msg)
@@ -140,6 +146,7 @@ class LazyFrame:
                 right_on=_normalize_opt(right_on),
                 how=how,
                 validate=validate,
+                suffix=suffix,
             ),
             self._conn,
         )

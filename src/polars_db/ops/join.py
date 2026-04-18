@@ -28,3 +28,4 @@ class JoinOp(Op):
     right_on: tuple[Expr, ...] | None = None
     how: str = "inner"
     validate: str = "m:m"
+    suffix: str = "_right"
