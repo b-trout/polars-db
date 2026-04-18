@@ -21,5 +21,5 @@
     "source=${localEnv:HOME}/.claude.json,target=/home/user/.claude.json,type=bind",
     "source=${localEnv:HOME}/.ssh,target=/home/user/.ssh,type=bind,readonly"
   ],
-  "postCreateCommand": "uv sync --all-groups && uv run pre-commit install"
+  "postCreateCommand": "uv sync --all-groups && git config --unset-all core.hooksPath 2>/dev/null; uv run pre-commit install"
 }
