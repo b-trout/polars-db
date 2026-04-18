@@ -143,13 +143,18 @@ class Expr:
 
     # -- window --------------------------------------------------------------
 
-    def over(self, *partition_by: builtins.str | Expr) -> WindowExpr:
-        return WindowExpr(
-            expr=self,
-            partition_by=tuple(
-                ColExpr(name=e) if isinstance(e, str) else e for e in partition_by
-            ),
-        )
+    def over(
+        self,
+        *partition_by: builtins.str | Expr,
+        order_by: builtins.str | Expr | list[builtins.str | Expr] | None = None,
+    ) -> WindowExpr:
+        pb = tuple(ColExpr(name=e) if isinstance(e, str) else e for e in partition_by)
+        ob: tuple[Expr, ...] | None = None
+        if order_by is not None:
+            if isinstance(order_by, (str, Expr)):
+                order_by = [order_by]
+            ob = tuple(ColExpr(name=e) if isinstance(e, str) else e for e in order_by)
+        return WindowExpr(expr=self, partition_by=pb, order_by=ob)
 
     def shift(self, n: int = 1) -> FuncExpr:
         return FuncExpr(func_name="shift", args=(self, LitExpr(value=n)))
@@ -159,6 +164,21 @@ class Expr:
 
     def row_number(self) -> FuncExpr:
         return FuncExpr(func_name="row_number", args=(self,))
+
+    def dense_rank(self) -> FuncExpr:
+        return FuncExpr(func_name="dense_rank", args=(self,))
+
+    def cum_sum(self) -> FuncExpr:
+        return FuncExpr(func_name="cum_sum", args=(self,))
+
+    def cum_count(self) -> FuncExpr:
+        return FuncExpr(func_name="cum_count", args=(self,))
+
+    def cum_max(self) -> FuncExpr:
+        return FuncExpr(func_name="cum_max", args=(self,))
+
+    def cum_min(self) -> FuncExpr:
+        return FuncExpr(func_name="cum_min", args=(self,))
 
     # -- transform -----------------------------------------------------------
 
