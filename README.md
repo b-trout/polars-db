@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/b-trout/polars-db/actions/workflows/pr-check.yml/badge.svg)](https://github.com/b-trout/polars-db/actions/workflows/pr-check.yml)
 [![Python 3.13+](https://img.shields.io/badge/python-3.13%2B-blue.svg)](https://www.python.org/downloads/)
+[![codecov](https://codecov.io/gh/b-trout/polars-db/branch/main/graph/badge.svg)](https://codecov.io/gh/b-trout/polars-db)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 A Python library that lets you query relational databases using Polars syntax.
