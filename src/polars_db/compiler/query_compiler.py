@@ -8,7 +8,7 @@ import sqlglot.expressions as exp
 
 from polars_db.compiler.expr_compiler import ExprCompiler
 from polars_db.exceptions import CompileError
-from polars_db.expr import AliasExpr, ColExpr, Expr
+from polars_db.expr import AliasExpr, ColExpr, Expr, WindowExpr
 from polars_db.ops import (
     DistinctOp,
     DropOp,
@@ -49,6 +49,14 @@ class QueryCompiler:
             case FilterOp(child=child, predicate=predicate):
                 inner = self.compile(child)
                 condition = self._expr_compiler.compile(predicate)
+                # SQL forbids window functions in WHERE; wrap in subquery
+                if self._op_has_window(child):
+                    inner = self._ensure_subquery(inner)
+                    return (
+                        exp.Select(expressions=[exp.Star()])
+                        .from_(inner)
+                        .where(condition)
+                    )
                 return inner.where(condition)
 
             case SelectOp(child=child, exprs=exprs):
@@ -358,3 +366,19 @@ class QueryCompiler:
         for c in conditions[1:]:
             result = exp.And(this=result, expression=c)
         return result
+
+    @staticmethod
+    def _expr_has_window(expr: Expr) -> bool:
+        """Check if an Expr tree contains a WindowExpr."""
+        if isinstance(expr, WindowExpr):
+            return True
+        if isinstance(expr, AliasExpr):
+            return QueryCompiler._expr_has_window(expr.expr)
+        return False
+
+    @staticmethod
+    def _op_has_window(op: Op) -> bool:
+        """Check if an Op introduces window expressions in its output."""
+        if isinstance(op, WithColumnsOp):
+            return any(QueryCompiler._expr_has_window(e) for e in op.exprs)
+        return False
