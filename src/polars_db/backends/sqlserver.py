@@ -36,9 +36,10 @@ def _validate_db_identifier(name: str) -> str:
 class SQLServerBackend(Backend):
     """SQL Server via native pymssql driver."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, create_if_missing: bool = False) -> None:
         self._conn: Connection | None = None
         self._conn_str: str | None = None
+        self._create_if_missing = create_if_missing
 
     @property
     def dialect(self) -> str:
@@ -68,8 +69,7 @@ class SQLServerBackend(Backend):
             self._conn_str = conn_str
         return self._conn
 
-    @staticmethod
-    def _create_connection(conn_str: str) -> Connection:
+    def _create_connection(self, conn_str: str) -> Connection:
         import pymssql
 
         parsed = urlparse(conn_str)
@@ -79,18 +79,25 @@ class SQLServerBackend(Backend):
         password = parsed.password or ""
         database = _validate_db_identifier(parsed.path.lstrip("/"))
 
-        # Ensure the target database exists.
-        # database is regex-restricted above, but apply T-SQL escaping as
-        # defence-in-depth: ] -> ]] inside brackets and ' -> '' inside strings.
-        bracketed = database.replace("]", "]]")
-        quoted = database.replace("'", "''")
-        master = pymssql.connect(
-            server=server, port=port, user=user, password=password, database="master"
-        )
-        master.autocommit(True)
-        cursor = master.cursor()
-        cursor.execute(f"IF DB_ID('{quoted}') IS NULL CREATE DATABASE [{bracketed}]")
-        master.close()
+        if self._create_if_missing:
+            # Ensure the target database exists.
+            # database is regex-restricted above, but apply T-SQL escaping as
+            # defence-in-depth: ] -> ]] inside brackets and ' -> '' inside strings.
+            bracketed = database.replace("]", "]]")
+            quoted = database.replace("'", "''")
+            master = pymssql.connect(
+                server=server,
+                port=port,
+                user=user,
+                password=password,
+                database="master",
+            )
+            master.autocommit(True)
+            cursor = master.cursor()
+            cursor.execute(
+                f"IF DB_ID('{quoted}') IS NULL CREATE DATABASE [{bracketed}]"
+            )
+            master.close()
 
         return pymssql.connect(
             server=server,

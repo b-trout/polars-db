@@ -15,9 +15,17 @@ if TYPE_CHECKING:
 class Connection:
     """Manage a database connection and provide table references."""
 
-    def __init__(self, conn_str: str, backend: Backend | None = None) -> None:
+    def __init__(
+        self,
+        conn_str: str,
+        backend: Backend | None = None,
+        *,
+        create_if_missing: bool = False,
+    ) -> None:
         self._conn_str = conn_str
-        self.backend = backend or detect_backend(conn_str)
+        self.backend = backend or detect_backend(
+            conn_str, create_if_missing=create_if_missing
+        )
         self._schema_cache: dict[str, list[str]] = {}
 
     def __repr__(self) -> str:
@@ -107,9 +115,25 @@ class Connection:
 # ---------------------------------------------------------------------------
 
 
-def connect(conn_str: str, **kwargs: object) -> Connection:
-    """Create a database connection."""
-    return Connection(conn_str, **kwargs)  # type: ignore[arg-type]
+def connect(
+    conn_str: str,
+    *,
+    create_if_missing: bool = False,
+    **kwargs: object,
+) -> Connection:
+    """Create a database connection.
+
+    Parameters
+    ----------
+    conn_str:
+        Database connection string (e.g. ``"postgresql://..."``).
+    create_if_missing:
+        SQL Server only. When ``True``, connect to ``master`` first and
+        issue ``CREATE DATABASE [<name>]`` if the target database does not
+        exist. Default ``False`` -- silently off to prevent accidental
+        database creation from typos in production connection strings.
+    """
+    return Connection(conn_str, create_if_missing=create_if_missing, **kwargs)  # type: ignore[arg-type]
 
 
 # ---------------------------------------------------------------------------
@@ -117,8 +141,12 @@ def connect(conn_str: str, **kwargs: object) -> Connection:
 # ---------------------------------------------------------------------------
 
 
-def detect_backend(conn_str: str) -> Backend:
-    """Auto-detect the backend from a connection string."""
+def detect_backend(conn_str: str, *, create_if_missing: bool = False) -> Backend:
+    """Auto-detect the backend from a connection string.
+
+    The ``create_if_missing`` flag is only meaningful for the SQL Server
+    backend; it is silently ignored for other backends.
+    """
     from polars_db.backends.bigquery import BigQueryBackend
     from polars_db.backends.duckdb import DuckDBBackend
     from polars_db.backends.mysql import MySQLBackend
@@ -135,7 +163,7 @@ def detect_backend(conn_str: str) -> Backend:
     if conn_str.startswith("sqlite://"):
         return SQLiteBackend()
     if conn_str.startswith("mssql://"):
-        return SQLServerBackend()
+        return SQLServerBackend(create_if_missing=create_if_missing)
     if "bigquery" in conn_str or conn_str.startswith("bigquery://"):
         return BigQueryBackend()
 
