@@ -253,6 +253,32 @@ class TestWindow:
         assert isinstance(e, FuncExpr)
         assert e.func_name == "cum_min"
 
+    def test_over_with_frame_rows(self) -> None:
+        """Verify ``.over()`` with frame spec creates WindowExpr with frame."""
+        e = (
+            col("amount")
+            .sum()
+            .over("dept", order_by="date", frame=("rows", "unbounded", 0))
+        )
+        assert isinstance(e, WindowExpr)
+        assert e.frame == ("rows", "unbounded", 0)
+
+    def test_over_with_frame_range(self) -> None:
+        """Verify ``.over()`` with range frame spec."""
+        e = (
+            col("amount")
+            .sum()
+            .over("dept", order_by="date", frame=("range", "unbounded", "unbounded"))
+        )
+        assert isinstance(e, WindowExpr)
+        assert e.frame == ("range", "unbounded", "unbounded")
+
+    def test_over_without_frame(self) -> None:
+        """Verify ``.over()`` without frame defaults to None."""
+        e = col("amount").sum().over("dept", order_by="date")
+        assert isinstance(e, WindowExpr)
+        assert e.frame is None
+
 
 @pytest.mark.unit
 class TestNullHandling:

@@ -324,6 +324,48 @@ class TestWindow:
         assert "MIN" in sql.upper()
         assert "ROWS BETWEEN" in sql.upper()
 
+    def test_explicit_rows_frame(self, compiler: ExprCompiler) -> None:
+        """Verify explicit ROWS frame compiles correctly."""
+        expr = WindowExpr(
+            expr=AggExpr(func="sum", arg=ColExpr(name="amount")),
+            partition_by=(ColExpr(name="dept"),),
+            order_by=(ColExpr(name="date"),),
+            frame=("rows", -3, 0),
+        )
+        result = compiler.compile(expr)
+        sql = result.sql(dialect="postgres")
+        assert "ROWS BETWEEN" in sql.upper()
+        assert "3 PRECEDING" in sql.upper()
+        assert "CURRENT ROW" in sql.upper()
+
+    def test_explicit_range_frame(self, compiler: ExprCompiler) -> None:
+        """Verify explicit RANGE frame compiles correctly."""
+        expr = WindowExpr(
+            expr=AggExpr(func="sum", arg=ColExpr(name="amount")),
+            partition_by=(ColExpr(name="dept"),),
+            order_by=(ColExpr(name="date"),),
+            frame=("range", "unbounded", "unbounded"),
+        )
+        result = compiler.compile(expr)
+        sql = result.sql(dialect="postgres")
+        assert "RANGE BETWEEN" in sql.upper()
+        assert "UNBOUNDED PRECEDING" in sql.upper()
+        assert "UNBOUNDED FOLLOWING" in sql.upper()
+
+    def test_rows_preceding_following(self, compiler: ExprCompiler) -> None:
+        """Verify ROWS BETWEEN N PRECEDING AND M FOLLOWING."""
+        expr = WindowExpr(
+            expr=AggExpr(func="sum", arg=ColExpr(name="amount")),
+            partition_by=(ColExpr(name="dept"),),
+            order_by=(ColExpr(name="date"),),
+            frame=("rows", -1, 1),
+        )
+        result = compiler.compile(expr)
+        sql = result.sql(dialect="postgres")
+        assert "ROWS BETWEEN" in sql.upper()
+        assert "1 PRECEDING" in sql.upper()
+        assert "1 FOLLOWING" in sql.upper()
+
 
 @pytest.mark.unit
 class TestSortExpr:
