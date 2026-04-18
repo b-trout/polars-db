@@ -50,6 +50,15 @@ _AGG_FUNCS: dict[str, type[exp.Expression]] = {
     "var": exp.Variance,
 }
 
+_CUMULATIVE_FUNCS: dict[str, type[exp.Expression]] = {
+    "cum_sum": exp.Sum,
+    "cum_count": exp.Count,
+    "cum_max": exp.Max,
+    "cum_min": exp.Min,
+}
+
+_CUMULATIVE_FUNC_NAMES = frozenset(_CUMULATIVE_FUNCS)
+
 _BUILTIN_FUNCS: dict[str, type[exp.Expression]] = {
     # String namespace functions
     "lower": exp.Lower,
@@ -119,6 +128,16 @@ class ExprCompiler:
                 window = exp.Window(this=inner, partition_by=pb)
                 if ob:
                     window.set("order", exp.Order(expressions=ob))
+                if _is_cumulative(inner_expr):
+                    window.set(
+                        "spec",
+                        exp.WindowSpec(
+                            kind="ROWS",
+                            start="UNBOUNDED",
+                            start_side="PRECEDING",
+                            end="CURRENT ROW",
+                        ),
+                    )
                 return window
 
             case AliasExpr(expr=inner_expr, alias=alias):
@@ -186,6 +205,11 @@ class ExprCompiler:
                 expressions=compiled_args[1:],
             )
 
+        # Cumulative window functions
+        cum_cls = _CUMULATIVE_FUNCS.get(name)
+        if cum_cls is not None:
+            return cum_cls(this=compiled_args[0])
+
         # Window helper functions
         if name == "shift":
             # Resolve the shift amount from the original Expr args
@@ -205,6 +229,8 @@ class ExprCompiler:
             return exp.Anonymous(this="RANK", expressions=[])
         if name == "row_number":
             return exp.Anonymous(this="ROW_NUMBER", expressions=[])
+        if name == "dense_rank":
+            return exp.Anonymous(this="DENSE_RANK", expressions=[])
 
         # String LIKE patterns
         if name in _LIKE_FUNCS:
@@ -265,3 +291,10 @@ class ExprCompiler:
             like_pattern = exp.Concat(expressions=[exp.Literal.string("%"), pattern])
 
         return exp.Like(this=col, expression=like_pattern)
+
+
+def _is_cumulative(expr: Expr) -> bool:
+    """Check if an expression is a cumulative window function."""
+    from polars_db.expr import FuncExpr as _FuncExpr
+
+    return isinstance(expr, _FuncExpr) and expr.func_name in _CUMULATIVE_FUNC_NAMES
