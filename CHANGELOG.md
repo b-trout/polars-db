@@ -2,11 +2,52 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.1.1] - 2026-04-18
 
-### Changed
+### ⚠ Breaking Changes
 
-- **Breaking**: `pdb.connect(...)` no longer auto-creates SQL Server databases by default. Pass `create_if_missing=True` to restore the prior behavior. Fixes typo-induced accidental database creation in production. (#4)
+- `pdb.connect(...)` no longer auto-creates SQL Server databases. Pass `create_if_missing=True` explicitly to restore the pre-0.1.1 behavior. Prevents accidental database creation from typos in production connection strings — see [ADR-0013](docs/adr/0013-sqlserver-auto-database-creation.md) for the rationale.
+- SQLite now requires the `sqlite` extra (`pip install polars-db[sqlite]`) since the backend has been migrated to the `adbc-driver-sqlite` driver.
+
+### Bug Fixes
+
+- Alias JoinValidator subquery so MySQL/T-SQL accept the generated SQL([e042492](https://github.com/b-trout/polars-db/commit/e042492cd63ee89bf86ffe95410722b50a979d42))
+- Emit explicit ON condition for T-SQL JOIN (USING is unsupported)([a87bece](https://github.com/b-trout/polars-db/commit/a87becedb9762478faa06636bc4d679be7738653))
+- Filter schema_query by current database/schema to prevent cross-schema column bleed([9f18a52](https://github.com/b-trout/polars-db/commit/9f18a52c90776e27697a76f369a1c653ca5bf259))
+- Suffix duplicate columns on JOIN to prevent ambiguous references([99c7059](https://github.com/b-trout/polars-db/commit/99c705941da4ff08c9cd4084f5610e3d94cadfdf))
+- Use AST builder for BigQuery schema_query to prevent injection([63758cf](https://github.com/b-trout/polars-db/commit/63758cf95c1d584b765dd2f3423959d5f027d88d))
+- Validate SQL Server database identifier to prevent injection([3dc3073](https://github.com/b-trout/polars-db/commit/3dc3073b0deb4af85260536b37bd6456aec04bb7))
+- Unset core.hooksPath before pre-commit install in devcontainer([9644f13](https://github.com/b-trout/polars-db/commit/9644f13f72c5c3553d2496ad1969f2ac6fa65cd0))
+
+### Miscellaneous
+
+- Remove unused _is_select_star helper and document Postgres thread-safety([7634d7e](https://github.com/b-trout/polars-db/commit/7634d7e45459235437554914b296508182f2c717))
+- Remove unused _compile_join_on_same method([9ada191](https://github.com/b-trout/polars-db/commit/9ada191ee8a9339b4f322f2c1e316797e2427269))
+
+### Performance
+
+- Migrate PostgreSQL and SQLite backends to ADBC for native Arrow transport([7ce68f8](https://github.com/b-trout/polars-db/commit/7ce68f820b27b22e132d336da987566d988926ec))
+
+### Refactor
+
+- Make SQL Server database auto-creation opt-in via create_if_missing([98668ab](https://github.com/b-trout/polars-db/commit/98668aba8248c8c1cae76bdb34cf2b17948f5b16))
+- Apply optimizer passes to fixpoint and remove dead mutation([d9e5321](https://github.com/b-trout/polars-db/commit/d9e5321997b2258834591d87670983fb6a893d50))
+
+### Testing
+
+- Expose fake dbapi as attribute on parent adbc mock([0e5c55b](https://github.com/b-trout/polars-db/commit/0e5c55be2ea6f42378ade387faabcfa61e4d43b4))
+- Patch parent adbc_driver_postgresql in sys.modules for unit test([2d05e41](https://github.com/b-trout/polars-db/commit/2d05e41586c02ed5e2c4b61c4a48567f3203932e))
+- Add integration tests for JOIN across 6 backends([4c609dd](https://github.com/b-trout/polars-db/commit/4c609dd24c96d2a1e12f4d7e806b4492f9c13166))
+- Accept Decimal return from Postgres EXTRACT and xfail SQLite dt.*([656a62a](https://github.com/b-trout/polars-db/commit/656a62afbc49cd00aa3defa0ccdbbb269165e303))
+- Add integration tests for case-when, namespaces, join validator, and misc expressions([8668d95](https://github.com/b-trout/polars-db/commit/8668d95530577f527aaa455ef66aa84128a942d6))
+
+### Merge
+
+- Sync with main to pick up JoinValidator fix (#48)([0b5567d](https://github.com/b-trout/polars-db/commit/0b5567d9aa1e0f2986337516e40aa52e851d0450))
+- Sync with main to pick up bug fixes (#45, #46)([9440855](https://github.com/b-trout/polars-db/commit/94408559bc7ae76759c69b62ca42e5295dc97b8c))
+- Sync with main to pick up bug fixes (#45, #46)([0104674](https://github.com/b-trout/polars-db/commit/0104674b89d4557e79a2bef9262536c3d237b0cb))
+
+## [0.1.0] - 2026-04-18
 
 ### Bug Fixes
 
@@ -17,6 +58,7 @@ All notable changes to this project will be documented in this file.
 
 ### CI/CD
 
+- Add release pipeline with tag-based versioning and CHANGELOG([1b3e82d](https://github.com/b-trout/polars-db/commit/1b3e82dbcfd8432630c481d9d1d0151f13f056e7))
 - Integrate Codecov for coverage reporting([311eeb0](https://github.com/b-trout/polars-db/commit/311eeb022d6900df7f90fedeb26032d0d90ff0f3))
 - Add 3-stage pipeline with per-backend integration tests (#23)([7037d8b](https://github.com/b-trout/polars-db/commit/7037d8b7b25c8216ca17b410ad8dd8d88ccc4383))
 - Add GitHub Actions PR check workflow using poe ci([b2d2b28](https://github.com/b-trout/polars-db/commit/b2d2b28110bdd4dd0022dade0c988c3be7ab084f))
@@ -56,6 +98,7 @@ All notable changes to this project will be documented in this file.
 
 ### Miscellaneous
 
+- Add PyPI metadata, classifiers, and py.typed marker([fc779d5](https://github.com/b-trout/polars-db/commit/fc779d55c9ba4c58ac37593bf81c36f2d962bc06))
 - Add dev tooling configuration([22a4e27](https://github.com/b-trout/polars-db/commit/22a4e27d3fc76a77cb42b648e04cbdfe6780e3e8))
 - Update .gitignore([5f53340](https://github.com/b-trout/polars-db/commit/5f53340ec71cb0ee8a08a5ed3a398d939b9424ae))
 
