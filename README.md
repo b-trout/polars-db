@@ -63,8 +63,8 @@ pip install polars-db[postgres,mysql]
 | Database | Extras | Driver | Connection string example |
 |---|---|---|---|
 | DuckDB | *(none)* | duckdb | `duckdb:///:memory:` |
-| SQLite | *(none)* | sqlite3 (stdlib) | `sqlite:///path/to/db.sqlite` |
-| PostgreSQL | `postgres` | psycopg2 | `postgresql://user:pass@host:5432/dbname` |
+| SQLite | `sqlite` | adbc-driver-sqlite | `sqlite:///path/to/db.sqlite` |
+| PostgreSQL | `postgres` | adbc-driver-postgresql | `postgresql://user:pass@host:5432/dbname` |
 | MySQL | `mysql` | PyMySQL | `mysql://user:pass@host:3306/dbname` |
 | SQL Server | `sqlserver` | pymssql | `mssql://user:pass@host:1433/dbname` |
 | BigQuery | `bigquery` | google-cloud-bigquery | `bigquery://project/dataset` |
