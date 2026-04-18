@@ -38,12 +38,15 @@ confusion, and dtype mismatches that plague pandas-based workflows.
 pip install polars-db
 ```
 
-DuckDB and SQLite work out of the box. For other databases, install the
-corresponding extras:
+DuckDB works out of the box. For other databases, install the corresponding
+extras:
 
 ```bash
 # PostgreSQL
 pip install polars-db[postgres]
+
+# SQLite
+pip install polars-db[sqlite]
 
 # MySQL
 pip install polars-db[mysql]
