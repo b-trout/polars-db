@@ -129,6 +129,20 @@ df = (
 ```
 
 ```python
+# Cumulative sum with ordering
+df = (
+    conn.table("sales")
+    .with_columns(
+        pdb.col("amount")
+        .cum_sum()
+        .over("dept", order_by="date")
+        .alias("running_total"),
+    )
+    .collect()
+)
+```
+
+```python
 # CASE WHEN
 df = (
     conn.table("users")
