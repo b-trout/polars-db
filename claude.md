@@ -1,0 +1,12 @@
+- Python runtime and Library management should be under `uv`
+- When installing python library, use `uv add` instead of `pip install`
+- Follow python development best practice in 2026
+- When test, execute all on docker container, not local
+- commit and pr message must be in English
+- commit messages must follow the template Conventional Commits 1.0.0
+- if there are more than 3 independant tasks, work parallel
+- before starting any tasks, ask me whether to create new git work branch
+- Never commit `claude.md`, `2026-03-27-polars-db-ci-design.md` and `2026-03-27-polars-db-design.md`
+- Python script must follow NumPy Docstring Style
+- When using comments, it must explain only why this implement accepts
+- PR should be merged after CI passes if CI runs
