@@ -1,5 +1,9 @@
 # polars-db
 
+[![CI](https://github.com/b-trout/polars-db/actions/workflows/pr-check.yml/badge.svg)](https://github.com/b-trout/polars-db/actions/workflows/pr-check.yml)
+[![Python 3.13+](https://img.shields.io/badge/python-3.13%2B-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
 A Python library that lets you query relational databases using Polars syntax.
 Write expressions like `pdb.col("age") > 30` and polars-db translates them into
 the appropriate SQL dialect for your backend.
@@ -215,3 +219,7 @@ POLARS_DB_TEST_BACKEND=postgres uv run poe test-integration
 # Run all pre-commit checks (format -> lint -> type-check -> yaml -> docker-lint)
 uv run poe pre-commit
 ```
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
