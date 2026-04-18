@@ -114,11 +114,6 @@ class Optimizer:
 
         return inner
 
-    @staticmethod
-    def _is_select_star(select: exp.Select) -> bool:
-        exprs = select.expressions
-        return len(exprs) == 1 and isinstance(exprs[0], exp.Star)
-
 
 class JoinValidator:
     """Validate JOIN cardinality constraints before execution."""
