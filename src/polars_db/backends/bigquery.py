@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 import pyarrow as pa
+import sqlglot.expressions as exp
 
 from polars_db.backends.base import Backend
 from polars_db.exceptions import BackendNotSupportedError
@@ -70,9 +71,26 @@ class BigQueryBackend(Backend):
         return bigquery.Client(project=project)
 
     def schema_query(self, table: str) -> str:
+        # BigQuery requires ``INFORMATION_SCHEMA`` to be referenced in
+        # uppercase, so we cannot fall back to the base-class implementation
+        # (which emits lowercase identifiers). Build the statement with the
+        # sqlglot AST so that ``table`` is emitted as a properly escaped
+        # string literal instead of being interpolated via f-string.
         return (
-            f"SELECT column_name FROM INFORMATION_SCHEMA.COLUMNS "
-            f"WHERE table_name = '{table}'"
+            exp.Select(expressions=[exp.Column(this=exp.to_identifier("column_name"))])
+            .from_(
+                exp.Table(
+                    db=exp.to_identifier("INFORMATION_SCHEMA"),
+                    this=exp.to_identifier("COLUMNS"),
+                )
+            )
+            .where(
+                exp.EQ(
+                    this=exp.Column(this=exp.to_identifier("table_name")),
+                    expression=exp.Literal.string(table),
+                )
+            )
+            .sql(dialect=self.dialect)
         )
 
     def build_explain_sql(self, sql: str, *, analyze: bool = False) -> str:
