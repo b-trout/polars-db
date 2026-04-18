@@ -82,10 +82,11 @@ class TestStringNamespace:
         assert result["name_len"][0] == len("Charlie")
 
 
-_sqlserver_extract_xfail = pytest.mark.xfail(
-    _BACKEND == "sqlserver",
-    reason="T-SQL uses DATEPART(year, ...) instead of EXTRACT(YEAR FROM ...); "
-    "see compiler/expr_compiler.py ``_EXTRACT_FUNCS`` mapping.",
+_dt_extract_xfail = pytest.mark.xfail(
+    _BACKEND in ("sqlserver", "sqlite"),
+    reason="T-SQL uses DATEPART(year, ...) and SQLite uses strftime; "
+    "neither accepts the ANSI ``EXTRACT(YEAR FROM ...)`` emitted by "
+    "compiler/expr_compiler.py ``_EXTRACT_FUNCS``.",
     strict=False,
 )
 
@@ -99,7 +100,7 @@ class TestDateNamespace:
     values since the value depends on when the suite runs.
     """
 
-    @_sqlserver_extract_xfail
+    @_dt_extract_xfail
     def test_dt_year(self, connection: Connection) -> None:
         """Verify ``dt.year()`` returns an integer in the expected range."""
         result = (
@@ -111,12 +112,13 @@ class TestDateNamespace:
             .filter(pdb.col("name") == "Alice")
             .collect()
         )
-        year_value = result["yr"][0]
-        assert isinstance(year_value, int)
+        # PostgreSQL's ``EXTRACT`` returns ``NUMERIC`` → polars maps it to
+        # ``Decimal``; other backends return ``int``. Accept either.
+        year_value = int(result["yr"][0])
         # Seed rows are inserted with CURRENT_TIMESTAMP — year must be >= 2024.
         assert year_value >= 2024
 
-    @_sqlserver_extract_xfail
+    @_dt_extract_xfail
     def test_dt_month(self, connection: Connection) -> None:
         """Verify ``dt.month()`` returns a valid 1-12 month integer."""
         result = (
@@ -128,11 +130,10 @@ class TestDateNamespace:
             .filter(pdb.col("name") == "Alice")
             .collect()
         )
-        month_value = result["mo"][0]
-        assert isinstance(month_value, int)
+        month_value = int(result["mo"][0])
         assert 1 <= month_value <= 12
 
-    @_sqlserver_extract_xfail
+    @_dt_extract_xfail
     def test_dt_day(self, connection: Connection) -> None:
         """Verify ``dt.day()`` returns a valid 1-31 day integer."""
         result = (
@@ -144,6 +145,5 @@ class TestDateNamespace:
             .filter(pdb.col("name") == "Alice")
             .collect()
         )
-        day_value = result["d"][0]
-        assert isinstance(day_value, int)
+        day_value = int(result["d"][0])
         assert 1 <= day_value <= 31
