@@ -266,6 +266,64 @@ class TestWindow:
         sql = result.sql(dialect="postgres")
         assert "ROW_NUMBER" in sql.upper()
 
+    def test_dense_rank(self, compiler: ExprCompiler) -> None:
+        """Verify dense_rank compiles to DENSE_RANK."""
+        expr = FuncExpr(func_name="dense_rank", args=(ColExpr(name="score"),))
+        result = compiler.compile(expr)
+        sql = result.sql(dialect="postgres")
+        assert "DENSE_RANK" in sql.upper()
+
+    def test_cum_sum_with_frame(self, compiler: ExprCompiler) -> None:
+        """Verify cum_sum inside WindowExpr compiles to SUM with frame spec."""
+        expr = WindowExpr(
+            expr=FuncExpr(func_name="cum_sum", args=(ColExpr(name="amount"),)),
+            partition_by=(ColExpr(name="dept"),),
+            order_by=(ColExpr(name="date"),),
+        )
+        result = compiler.compile(expr)
+        assert isinstance(result, exp.Window)
+        sql = result.sql(dialect="postgres")
+        assert "SUM" in sql.upper()
+        assert "ROWS BETWEEN" in sql.upper()
+        assert "UNBOUNDED PRECEDING" in sql.upper()
+        assert "CURRENT ROW" in sql.upper()
+
+    def test_cum_count_with_frame(self, compiler: ExprCompiler) -> None:
+        """Verify cum_count inside WindowExpr compiles to COUNT with frame spec."""
+        expr = WindowExpr(
+            expr=FuncExpr(func_name="cum_count", args=(ColExpr(name="id"),)),
+            partition_by=(ColExpr(name="dept"),),
+            order_by=(ColExpr(name="date"),),
+        )
+        result = compiler.compile(expr)
+        sql = result.sql(dialect="postgres")
+        assert "COUNT" in sql.upper()
+        assert "ROWS BETWEEN" in sql.upper()
+
+    def test_cum_max_with_frame(self, compiler: ExprCompiler) -> None:
+        """Verify cum_max inside WindowExpr compiles to MAX with frame spec."""
+        expr = WindowExpr(
+            expr=FuncExpr(func_name="cum_max", args=(ColExpr(name="amount"),)),
+            partition_by=(ColExpr(name="dept"),),
+            order_by=(ColExpr(name="date"),),
+        )
+        result = compiler.compile(expr)
+        sql = result.sql(dialect="postgres")
+        assert "MAX" in sql.upper()
+        assert "ROWS BETWEEN" in sql.upper()
+
+    def test_cum_min_with_frame(self, compiler: ExprCompiler) -> None:
+        """Verify cum_min inside WindowExpr compiles to MIN with frame spec."""
+        expr = WindowExpr(
+            expr=FuncExpr(func_name="cum_min", args=(ColExpr(name="amount"),)),
+            partition_by=(ColExpr(name="dept"),),
+            order_by=(ColExpr(name="date"),),
+        )
+        result = compiler.compile(expr)
+        sql = result.sql(dialect="postgres")
+        assert "MIN" in sql.upper()
+        assert "ROWS BETWEEN" in sql.upper()
+
 
 @pytest.mark.unit
 class TestSortExpr:

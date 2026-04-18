@@ -203,6 +203,56 @@ class TestWindow:
         assert isinstance(e, WindowExpr)
         assert isinstance(e.partition_by[0], ColExpr)
 
+    def test_over_with_order_by_string(self) -> None:
+        """Verify ``.over()`` with order_by string creates WindowExpr with order_by."""
+        e = col("amount").sum().over("dept", order_by="date")
+        assert isinstance(e, WindowExpr)
+        assert e.order_by is not None
+        assert len(e.order_by) == 1
+
+    def test_over_with_order_by_list(self) -> None:
+        """Verify ``.over()`` with order_by list creates multiple order_by entries."""
+        e = col("amount").sum().over("dept", order_by=["date", "id"])
+        assert isinstance(e, WindowExpr)
+        assert e.order_by is not None
+        assert len(e.order_by) == 2
+
+    def test_over_with_order_by_expr(self) -> None:
+        """Verify ``.over()`` with order_by Expr creates WindowExpr."""
+        e = col("amount").sum().over("dept", order_by=col("date"))
+        assert isinstance(e, WindowExpr)
+        assert e.order_by is not None
+
+    def test_dense_rank(self) -> None:
+        """Verify ``.dense_rank()`` produces a ``FuncExpr``."""
+        e = col("score").dense_rank()
+        assert isinstance(e, FuncExpr)
+        assert e.func_name == "dense_rank"
+
+    def test_cum_sum(self) -> None:
+        """Verify ``.cum_sum()`` produces a ``FuncExpr``."""
+        e = col("amount").cum_sum()
+        assert isinstance(e, FuncExpr)
+        assert e.func_name == "cum_sum"
+
+    def test_cum_count(self) -> None:
+        """Verify ``.cum_count()`` produces a ``FuncExpr``."""
+        e = col("id").cum_count()
+        assert isinstance(e, FuncExpr)
+        assert e.func_name == "cum_count"
+
+    def test_cum_max(self) -> None:
+        """Verify ``.cum_max()`` produces a ``FuncExpr``."""
+        e = col("amount").cum_max()
+        assert isinstance(e, FuncExpr)
+        assert e.func_name == "cum_max"
+
+    def test_cum_min(self) -> None:
+        """Verify ``.cum_min()`` produces a ``FuncExpr``."""
+        e = col("amount").cum_min()
+        assert isinstance(e, FuncExpr)
+        assert e.func_name == "cum_min"
+
 
 @pytest.mark.unit
 class TestNullHandling:
