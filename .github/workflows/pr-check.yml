@@ -46,11 +46,12 @@ jobs:
         run: uv sync --all-groups
       - name: Run unit tests
         run: uv run poe test-unit
-      - name: Upload coverage
-        uses: actions/upload-artifact@v4
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
         with:
-          name: coverage-report
-          path: coverage.xml
+          files: coverage.xml
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
 
   # ===== Stage 3: Integration Test =====
   integration-test:
