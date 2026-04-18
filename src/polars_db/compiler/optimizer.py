@@ -16,8 +16,19 @@ class Optimizer:
     """Optimize a SQLGlot AST before rendering."""
 
     def optimize(self, ast: exp.Expression) -> exp.Expression:
-        ast = self._remove_unnecessary_subqueries(ast)
-        ast = self._merge_consecutive_filters(ast)
+        # Apply passes until the AST stops changing so that deeply nested
+        # subqueries (e.g. 3+ levels of filter wrappers) fully collapse in
+        # a single ``optimize()`` call. A bounded iteration count provides
+        # a defensive guard against pathological cases.
+        max_iterations = 10
+        prev_sql: str | None = None
+        for _ in range(max_iterations):
+            ast = self._remove_unnecessary_subqueries(ast)
+            ast = self._merge_consecutive_filters(ast)
+            cur_sql = ast.sql()
+            if prev_sql == cur_sql:
+                break
+            prev_sql = cur_sql
         return ast
 
     @staticmethod
@@ -96,9 +107,10 @@ class Optimizer:
         merged = exp.And(this=inner_where.this, expression=outer_where.this)
         inner_where.set("this", merged)
 
-        # Remove outer WHERE and collapse subquery
+        # Remove the outer WHERE. The collapsed subquery is returned
+        # directly — mutating ``ast`` here would be dead work because the
+        # caller reassigns from the return value.
         outer_where.pop()
-        ast.set("from", exp.From(this=inner))
 
         return inner
 
