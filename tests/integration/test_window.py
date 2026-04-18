@@ -73,7 +73,10 @@ class TestWindowRanking:
         result = (
             connection.table("orders")
             .with_columns(
-                pdb.col("amount").rank().over("status").alias("amount_rank"),
+                pdb.col("amount")
+                .rank()
+                .over("status", order_by="id")
+                .alias("amount_rank"),
             )
             .select("id", "status", "amount", "amount_rank")
             .collect()
@@ -86,7 +89,10 @@ class TestWindowRanking:
         result = (
             connection.table("orders")
             .with_columns(
-                pdb.col("id").row_number().over("status").alias("row_num"),
+                pdb.col("id")
+                .row_number()
+                .over("status", order_by="id")
+                .alias("row_num"),
             )
             .select("id", "status", "row_num")
             .collect()
@@ -99,7 +105,10 @@ class TestWindowRanking:
         result = (
             connection.table("orders")
             .with_columns(
-                pdb.col("amount").dense_rank().over("status").alias("dense_rnk"),
+                pdb.col("amount")
+                .dense_rank()
+                .over("status", order_by="id")
+                .alias("dense_rnk"),
             )
             .select("id", "status", "amount", "dense_rnk")
             .collect()
@@ -117,7 +126,10 @@ class TestWindowShift:
         result = (
             connection.table("orders")
             .with_columns(
-                pdb.col("amount").shift(1).over("status").alias("prev_amount"),
+                pdb.col("amount")
+                .shift(1)
+                .over("status", order_by="id")
+                .alias("prev_amount"),
             )
             .select("id", "status", "amount", "prev_amount")
             .collect()
