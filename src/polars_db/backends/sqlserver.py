@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
@@ -13,6 +14,23 @@ from polars_db.exceptions import BackendNotSupportedError
 
 if TYPE_CHECKING:
     from pymssql import Connection
+
+
+_VALID_DB_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}")
+
+
+def _validate_db_identifier(name: str) -> str:
+    """Validate a SQL Server database identifier for safe DDL embedding.
+
+    Only allows ``[A-Za-z_][A-Za-z0-9_]{0,127}`` to prevent T-SQL injection
+    via a crafted connection string (e.g. ``foo]; DROP DATABASE master; --``
+    which could otherwise break out of the bracketed identifier in the
+    auto-create ``CREATE DATABASE [...]`` path).
+    """
+    if not _VALID_DB_NAME.fullmatch(name):
+        msg = f"Invalid SQL Server database name: {name!r}"
+        raise ValueError(msg)
+    return name
 
 
 class SQLServerBackend(Backend):
@@ -59,15 +77,19 @@ class SQLServerBackend(Backend):
         port = str(parsed.port or 1433)
         user = parsed.username or "sa"
         password = parsed.password or ""
-        database = parsed.path.lstrip("/")
+        database = _validate_db_identifier(parsed.path.lstrip("/"))
 
-        # Ensure the target database exists
+        # Ensure the target database exists.
+        # database is regex-restricted above, but apply T-SQL escaping as
+        # defence-in-depth: ] -> ]] inside brackets and ' -> '' inside strings.
+        bracketed = database.replace("]", "]]")
+        quoted = database.replace("'", "''")
         master = pymssql.connect(
             server=server, port=port, user=user, password=password, database="master"
         )
         master.autocommit(True)
         cursor = master.cursor()
-        cursor.execute(f"IF DB_ID('{database}') IS NULL CREATE DATABASE [{database}]")
+        cursor.execute(f"IF DB_ID('{quoted}') IS NULL CREATE DATABASE [{bracketed}]")
         master.close()
 
         return pymssql.connect(
