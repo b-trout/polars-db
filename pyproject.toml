@@ -8,13 +8,29 @@ source = "vcs"
 [tool.hatch.build.targets.wheel]
 packages = ["src/polars_db"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"src/polars_db/py.typed" = "polars_db/py.typed"
+
 [project]
 name = "polars-db"
 dynamic = ["version"]
-description = "Query Builder with polars syntax"
+description = "Query databases using Polars syntax — the Python equivalent of R's dbplyr"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.13"
+authors = [{ name = "b-trout" }]
+keywords = ["polars", "sql", "database", "query-builder", "dataframe", "dbplyr"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Database",
+    "Topic :: Scientific/Engineering",
+    "Typing :: Typed",
+]
 dependencies = [
     "polars>=1.39.3",
     "sqlglot>=30.4.3",
