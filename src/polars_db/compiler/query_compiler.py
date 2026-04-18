@@ -111,24 +111,8 @@ class QueryCompiler:
             case JoinOp(how="semi") | JoinOp(how="anti"):
                 return self._compile_semi_anti_join(op)
 
-            case JoinOp(
-                left=left,
-                right=right,
-                on=on,
-                left_on=left_on,
-                right_on=right_on,
-                how=how,
-            ):
-                left_sql = self.compile(left)
-                right_sql = self._ensure_subquery(self.compile(right))
-                join_type = self._join_type(how)
-                if on is not None:
-                    using_cols = [self._expr_compiler.compile(e) for e in on]
-                    return left_sql.join(
-                        right_sql, using=using_cols, join_type=join_type
-                    )
-                on_expr = self._compile_join_on_different(left_on, right_on)
-                return left_sql.join(right_sql, on=on_expr, join_type=join_type)
+            case JoinOp():
+                return self._compile_join(op)
 
             case SortOp(child=child, by=by, descending=descending):
                 inner = self.compile(child)
@@ -214,8 +198,10 @@ class QueryCompiler:
                 return self._resolve_columns(child)
             case GroupByOp(by=by, agg=agg):
                 return [self._extract_alias(e) for e in (*by, *agg)]
-            case JoinOp(left=left, right=right):
-                return self._resolve_columns(left) + self._resolve_columns(right)
+            case JoinOp(how="semi") | JoinOp(how="anti"):
+                return list(self._resolve_columns(op.left))
+            case JoinOp():
+                return self._resolve_join_columns(op)
             case _:
                 msg = f"Cannot resolve columns for {type(op).__name__}"
                 raise CompileError(msg)
@@ -269,6 +255,171 @@ class QueryCompiler:
             for lk, rk in zip(left_on, right_on, strict=True)
         ]
         return self._and_chain(conditions)
+
+    def _compile_join(self, op: JoinOp) -> exp.Expression:
+        """Compile a non-semi/anti JOIN, suffixing duplicate right columns."""
+        left, right = op.left, op.right
+        on, left_on, right_on = op.on, op.left_on, op.right_on
+        join_type = self._join_type(op.how)
+
+        # Detect whether the left/right outputs share any non-USING column
+        # names. If not, fall back to the simple form so existing SQL tests
+        # and integrations continue to emit the minimal JOIN form.
+        collisions = self._collision_columns(op)
+        if not collisions:
+            left_sql = self.compile(left)
+            right_sql = self._ensure_subquery(self.compile(right))
+            if on is not None:
+                using_cols = [self._expr_compiler.compile(e) for e in on]
+                return left_sql.join(right_sql, using=using_cols, join_type=join_type)
+            on_expr = self._compile_join_on_different(left_on, right_on)
+            return left_sql.join(right_sql, on=on_expr, join_type=join_type)
+
+        # Collision present: wrap both sides in aliased subqueries and
+        # emit an explicit projection that qualifies each column and
+        # suffixes the right-side duplicates.
+        left_sub = self._ensure_subquery(self.compile(left))
+        right_sub = self._ensure_subquery(self.compile(right))
+        left_alias = left_sub.alias_or_name
+        right_alias = right_sub.alias_or_name
+
+        projection = self._build_join_projection(
+            op=op,
+            left_alias=left_alias,
+            right_alias=right_alias,
+            collisions=collisions,
+        )
+
+        select = exp.Select(expressions=projection).from_(left_sub)
+        if on is not None:
+            using_cols = [self._expr_compiler.compile(e) for e in on]
+            return select.join(right_sub, using=using_cols, join_type=join_type)
+
+        on_expr = self._compile_join_on_qualified(
+            left_on, right_on, left_alias, right_alias
+        )
+        return select.join(right_sub, on=on_expr, join_type=join_type)
+
+    def _compile_join_on_qualified(
+        self,
+        left_on: tuple[Expr, ...] | None,
+        right_on: tuple[Expr, ...] | None,
+        left_alias: str,
+        right_alias: str,
+    ) -> exp.Expression:
+        """Compile ON condition with table-qualified column refs."""
+        if left_on is None or right_on is None:
+            msg = "'left_on' and 'right_on' must both be specified"
+            raise CompileError(msg)
+        conditions = [
+            exp.EQ(
+                this=exp.Column(
+                    table=exp.to_identifier(left_alias),
+                    this=exp.to_identifier(self._extract_col_name(lk)),
+                ),
+                expression=exp.Column(
+                    table=exp.to_identifier(right_alias),
+                    this=exp.to_identifier(self._extract_col_name(rk)),
+                ),
+            )
+            for lk, rk in zip(left_on, right_on, strict=True)
+        ]
+        return self._and_chain(conditions)
+
+    def _build_join_projection(
+        self,
+        *,
+        op: JoinOp,
+        left_alias: str,
+        right_alias: str,
+        collisions: set[str],
+    ) -> list[exp.Expression]:
+        """Build the explicit SELECT list for a collision-resolving JOIN."""
+        left_cols = self._resolve_columns(op.left)
+        right_cols = self._resolve_columns(op.right)
+        using_keys = self._using_key_names(op)
+        suffix = op.suffix
+
+        cols: list[exp.Expression] = []
+
+        # Left side: USING keys stay unqualified (they refer to the merged
+        # column produced by USING); the remainder are qualified with the
+        # left alias.
+        for c in left_cols:
+            if c in using_keys:
+                cols.append(exp.Column(this=exp.to_identifier(c)))
+            else:
+                cols.append(
+                    exp.Column(
+                        table=exp.to_identifier(left_alias),
+                        this=exp.to_identifier(c),
+                    )
+                )
+
+        # Right side: skip USING keys (already emitted), qualify the rest,
+        # alias duplicates to `<name><suffix>` so downstream ops see a
+        # unique output name.
+        for c in right_cols:
+            if c in using_keys:
+                continue
+            qualified = exp.Column(
+                table=exp.to_identifier(right_alias),
+                this=exp.to_identifier(c),
+            )
+            if c in collisions:
+                cols.append(
+                    exp.Alias(this=qualified, alias=exp.to_identifier(c + suffix))
+                )
+            else:
+                cols.append(qualified)
+        return cols
+
+    def _resolve_join_columns(self, op: JoinOp) -> list[str]:
+        """Resolve output column names for a non-semi/anti JOIN."""
+        left_cols = self._resolve_columns(op.left)
+        right_cols = self._resolve_columns(op.right)
+        using_keys = self._using_key_names(op)
+        left_set = set(left_cols)
+        suffix = op.suffix
+
+        result = list(left_cols)
+        for c in right_cols:
+            if c in using_keys:
+                continue
+            result.append(c + suffix if c in left_set else c)
+        return result
+
+    def _collision_columns(self, op: JoinOp) -> set[str]:
+        """Names that appear in both left and right outputs excluding USING keys.
+
+        If column resolution is impossible (e.g. no connection is bound, as
+        in lightweight compile-only tests), return an empty set so we emit
+        the simple JOIN form. Downstream ambiguity only becomes reachable
+        via ``.collect()``, which always has a connection.
+        """
+        try:
+            left_cols = set(self._resolve_columns(op.left))
+            right_cols = set(self._resolve_columns(op.right))
+        except CompileError:
+            return set()
+        using_keys = self._using_key_names(op)
+        return (left_cols & right_cols) - using_keys
+
+    def _using_key_names(self, op: JoinOp) -> set[str]:
+        """Column names merged by USING (empty when left_on/right_on is used)."""
+        if op.on is None:
+            return set()
+        return {self._extract_col_name(e) for e in op.on}
+
+    @staticmethod
+    def _extract_col_name(expr: Expr) -> str:
+        """Return the underlying column name for a key expression."""
+        if isinstance(expr, ColExpr):
+            return expr.name
+        if isinstance(expr, AliasExpr):
+            return expr.alias
+        msg = f"Join key must be a column reference, got {type(expr).__name__}"
+        raise CompileError(msg)
 
     def _compile_semi_anti_join(self, op: JoinOp) -> exp.Expression:
         left_sql = self.compile(op.left)
