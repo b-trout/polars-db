@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 import pyarrow as pa
+import sqlglot.expressions as exp
 
 from polars_db.backends.base import Backend
 
@@ -63,6 +64,10 @@ class MySQLBackend(Backend):
 
     def function_mapping(self) -> dict[str, str]:
         return {"string_agg": "GROUP_CONCAT"}
+
+    def current_schema_sql_expr(self) -> exp.Expression:
+        """MySQL uses ``DATABASE()`` to return the current database name."""
+        return exp.Anonymous(this="DATABASE")
 
     def close(self) -> None:
         if self._conn is not None:

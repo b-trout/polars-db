@@ -51,7 +51,18 @@ class Backend(ABC):
         return "\n".join(builtins_str(v) for v in df.to_series(0).to_list())
 
     def schema_query(self, table: str) -> str:
-        """Build a query to fetch column names for *table*."""
+        """Build a query to fetch column names for *table*.
+
+        The query filters ``information_schema.columns`` by both
+        ``table_name`` and the current database/schema so that columns
+        from system tables with the same name (e.g. MySQL's
+        ``mysql.user`` vs. a user-defined ``users`` table) do not bleed
+        into the result.  The current-schema expression is produced by
+        :meth:`current_schema_sql_expr`, which subclasses may override.
+
+        Results are ordered by ``ordinal_position`` for deterministic
+        column ordering across drivers.
+        """
         return (
             exp.Select(expressions=[exp.Column(this=exp.to_identifier("column_name"))])
             .from_(
@@ -61,13 +72,30 @@ class Backend(ABC):
                 )
             )
             .where(
-                exp.EQ(
-                    this=exp.Column(this=exp.to_identifier("table_name")),
-                    expression=exp.Literal.string(table),
+                exp.And(
+                    this=exp.EQ(
+                        this=exp.Column(this=exp.to_identifier("table_name")),
+                        expression=exp.Literal.string(table),
+                    ),
+                    expression=exp.EQ(
+                        this=exp.Column(this=exp.to_identifier("table_schema")),
+                        expression=self.current_schema_sql_expr(),
+                    ),
                 )
             )
+            .order_by(exp.Column(this=exp.to_identifier("ordinal_position")))
             .sql(dialect=self.dialect)
         )
+
+    def current_schema_sql_expr(self) -> exp.Expression:
+        """Return an AST node that evaluates to the current schema/database.
+
+        The default is ANSI SQL ``CURRENT_SCHEMA()``, which works for
+        PostgreSQL.  Dialects that identify the current namespace
+        differently (e.g. MySQL's ``DATABASE()`` or SQL Server's
+        ``SCHEMA_NAME()``) should override this hook.
+        """
+        return exp.Anonymous(this="CURRENT_SCHEMA")
 
 
 # Alias to avoid shadowing inside Backend methods
