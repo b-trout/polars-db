@@ -2,7 +2,9 @@
 
 import pytest
 
+from polars_db.backends.mysql import MySQLBackend
 from polars_db.backends.postgres import PostgresBackend
+from polars_db.backends.sqlserver import SQLServerBackend
 from polars_db.compiler.optimizer import JoinValidator
 from polars_db.compiler.query_compiler import QueryCompiler
 from polars_db.expr import ColExpr
@@ -97,3 +99,33 @@ class TestJoinValidator:
         queries = validator.build_validation_queries(op, compiler)
         assert len(queries) == 1
         assert "id" in queries[0]
+
+    def test_subquery_is_aliased_for_mysql(self, validator: JoinValidator) -> None:
+        """Validation query must alias the derived table (MySQL rejects anon)."""
+        mysql_compiler = QueryCompiler(MySQLBackend())
+        op = JoinOp(
+            left=TableRef(name="users"),
+            right=TableRef(name="orders"),
+            on=(ColExpr(name="user_id"),),
+            how="inner",
+            validate="1:m",
+        )
+        queries = validator.build_validation_queries(op, mysql_compiler)
+        assert len(queries) == 1
+        # Presence of ``AS `_v``` (or ``AS _v``) proves the subquery carries an alias
+        assert "_v" in queries[0]
+
+    def test_tsql_uses_top_not_limit(self, validator: JoinValidator) -> None:
+        """T-SQL rewrites ``LIMIT 1`` to ``TOP 1`` via sqlglot."""
+        tsql_compiler = QueryCompiler(SQLServerBackend())
+        op = JoinOp(
+            left=TableRef(name="users"),
+            right=TableRef(name="orders"),
+            on=(ColExpr(name="user_id"),),
+            how="inner",
+            validate="1:m",
+        )
+        queries = validator.build_validation_queries(op, tsql_compiler)
+        assert len(queries) == 1
+        assert "TOP" in queries[0].upper()
+        assert "LIMIT" not in queries[0].upper()
