@@ -253,16 +253,6 @@ class QueryCompiler:
         msg = f"Unknown join type: {how!r}"
         raise ValueError(msg)
 
-    def _compile_join_on_same(self, on: tuple[Expr, ...]) -> exp.Expression:
-        conditions = [
-            exp.EQ(
-                this=self._expr_compiler.compile(e),
-                expression=self._expr_compiler.compile(e),
-            )
-            for e in on
-        ]
-        return self._and_chain(conditions)
-
     def _compile_join_on_different(
         self,
         left_on: tuple[Expr, ...] | None,
