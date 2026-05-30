@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
 import sqlglot.expressions as exp
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     import pyarrow as pa
 
 
@@ -27,6 +30,30 @@ class Backend(ABC):
     def execute_sql(self, sql: str, conn_str: str) -> pa.Table:
         """Execute SQL and return an Arrow Table."""
         ...
+
+    @property
+    def supports_atomic_validation(self) -> bool:
+        """Whether ``transaction()`` provides snapshot isolation across calls.
+
+        Backends that cannot run multiple SQL statements inside a single
+        snapshot (e.g. BigQuery, where every job is a separate transaction)
+        override this to ``False`` so that
+        :meth:`polars_db.lazy_frame.LazyFrame._run_validations` can skip
+        JOIN cardinality checks rather than emit a falsely-confident result.
+        """
+        return True
+
+    @contextmanager
+    def transaction(self, conn_str: str) -> Iterator[None]:
+        """Open a transaction so that subsequent ``execute_sql`` calls share a snapshot.
+
+        The default implementation is a no-op suitable for backends that
+        cannot honour cross-statement atomicity (these MUST also override
+        :attr:`supports_atomic_validation` to return ``False``). Concrete
+        backends override to set an appropriate isolation level and
+        commit/rollback at block exit.
+        """
+        yield
 
     def render(self, ast: exp.Expression) -> str:
         """Render a SQLGlot AST to a SQL string."""

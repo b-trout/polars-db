@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
 from polars_db.backends.base import Backend
 from polars_db.exceptions import BackendNotSupportedError
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     import pyarrow as pa
     from adbc_driver_manager.dbapi import Connection as ADBCConnection
 
@@ -23,6 +26,16 @@ class SQLiteBackend(Backend):
     rest of the project; the path (or ``:memory:`` literal) is extracted
     before being passed to ADBC, which expects a bare file path.
 
+    .. note::
+        ADBC's ``set_autocommit`` toggle is unreliable on SQLite — when
+        the connection is opened with ``autocommit=True`` and toggled
+        off mid-session, the rollback does not undo statements issued
+        during the toggle window. This backend therefore opens the
+        connection in the DBAPI default ``autocommit=False`` mode and
+        explicitly commits after every ``execute_sql`` call (matching
+        what MySQL / SQL Server already do), suppressing the commit
+        only while inside a :meth:`transaction` block.
+
     .. warning::
         A single backend instance caches one connection.  The cache is
         not thread-safe.
@@ -31,6 +44,7 @@ class SQLiteBackend(Backend):
     def __init__(self) -> None:
         self._conn: ADBCConnection | None = None
         self._conn_str: str | None = None
+        self._in_tx: bool = False
 
     @property
     def dialect(self) -> str:
@@ -44,9 +58,38 @@ class SQLiteBackend(Backend):
             # ADBC returns an empty Arrow table (zero columns) for DDL/DML
             # statements that do not produce a result set, matching the
             # ``pa.table({})`` contract of the previous implementation.
-            return cursor.fetch_arrow_table()
+            result = cursor.fetch_arrow_table()
         finally:
             cursor.close()
+        # Per-statement commit replicates the historical autocommit-like
+        # semantics. Inside a ``transaction()`` block the outer context
+        # commits/rolls back as a whole, so skip here to keep the
+        # snapshot intact (ADR-0017).
+        if not self._in_tx:
+            conn.commit()
+        return result
+
+    @contextmanager
+    def transaction(self, conn_str: str) -> Iterator[None]:
+        """Open a deferred SQLite transaction on the cached connection.
+
+        SQLite's default isolation is serializable (single-writer, MVCC
+        readers in WAL mode). The cached connection is already in
+        ``autocommit=False`` mode (see class docstring), so flipping
+        ``_in_tx`` is enough to suppress per-statement commits and let
+        the outer ``commit()`` / ``rollback()`` define the snapshot.
+        Closes the TOCTOU gap documented in ADR-0017.
+        """
+        conn = self._get_connection(conn_str)
+        self._in_tx = True
+        try:
+            yield
+            conn.commit()
+        except BaseException:
+            conn.rollback()
+            raise
+        finally:
+            self._in_tx = False
 
     def _get_connection(self, conn_str: str) -> ADBCConnection:
         if self._conn is None or self._conn_str != conn_str:
@@ -76,6 +119,7 @@ class SQLiteBackend(Backend):
             self._conn.close()
             self._conn = None
             self._conn_str = None
+            self._in_tx = False
 
 
 def _extract_sqlite_path(conn_str: str) -> str:

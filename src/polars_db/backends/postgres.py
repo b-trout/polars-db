@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
 from polars_db.backends.base import Backend
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     import pyarrow as pa
     from adbc_driver_manager.dbapi import Connection as ADBCConnection
 
@@ -20,6 +23,17 @@ class PostgresBackend(Backend):
     types come from the driver's Arrow schema, so NULL-only columns no
     longer collapse to ``null``.
 
+    .. note::
+        The cached connection runs in DBAPI default ``autocommit=False``
+        mode and we explicitly call ``conn.commit()`` after every
+        ``execute_sql`` so callers see the same one-statement-one-commit
+        semantics psycopg2 used to provide. Inside a :meth:`transaction`
+        block the per-statement commit is suppressed; the outer
+        ``commit()`` / ``rollback()`` defines the snapshot. We avoid the
+        ``set_autocommit`` toggle because ADBC's behaviour around
+        toggling mid-session is driver-dependent (SQLite for instance
+        ignores it for rollback purposes).
+
     .. warning::
         A single backend instance caches one connection in
         ``self._conn``/``self._conn_str``. The cache is not thread-safe —
@@ -32,6 +46,7 @@ class PostgresBackend(Backend):
     def __init__(self) -> None:
         self._conn: ADBCConnection | None = None
         self._conn_str: str | None = None
+        self._in_tx: bool = False
 
     @property
     def dialect(self) -> str:
@@ -45,9 +60,42 @@ class PostgresBackend(Backend):
             # ADBC returns an empty table with zero columns for DDL/DML
             # (no result set), which matches the ``pa.table({})`` contract
             # the previous implementation produced.
-            return cursor.fetch_arrow_table()
+            result = cursor.fetch_arrow_table()
         finally:
             cursor.close()
+        # Per-statement commit preserves the historical psycopg2
+        # autocommit-True semantics. Inside a ``transaction()`` block the
+        # outer context commits/rolls back as a whole, so skip here to
+        # keep the snapshot intact (ADR-0017).
+        if not self._in_tx:
+            conn.commit()
+        return result
+
+    @contextmanager
+    def transaction(self, conn_str: str) -> Iterator[None]:
+        """Open a REPEATABLE READ transaction on the cached connection.
+
+        Issues ``SET TRANSACTION ISOLATION LEVEL REPEATABLE READ`` as the
+        first statement of the next implicit transaction; subsequent
+        ``execute_sql`` calls then share that snapshot until block exit
+        commits or rolls back. Closes the TOCTOU gap documented in
+        ADR-0017.
+        """
+        conn = self._get_connection(conn_str)
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+        finally:
+            cursor.close()
+        self._in_tx = True
+        try:
+            yield
+            conn.commit()
+        except BaseException:
+            conn.rollback()
+            raise
+        finally:
+            self._in_tx = False
 
     def _get_connection(self, conn_str: str) -> ADBCConnection:
         if self._conn is None or self._conn_str != conn_str:
@@ -60,11 +108,11 @@ class PostgresBackend(Backend):
     def _create_connection(conn_str: str) -> ADBCConnection:
         import adbc_driver_postgresql.dbapi as adbc_pg
 
-        # ``autocommit=True`` preserves the previous psycopg2 semantics in
-        # which every ``execute_sql`` call is its own transaction.  DDL
-        # and DML are committed immediately, matching the behaviour callers
-        # relied on before the ADBC migration.
-        return adbc_pg.connect(conn_str, autocommit=True)
+        # Open in DBAPI-default ``autocommit=False``; ``execute_sql``
+        # commits after every statement when not in a tx, and
+        # ``transaction()`` suppresses that commit so the whole block
+        # runs as one snapshot.
+        return adbc_pg.connect(conn_str)
 
     def function_mapping(self) -> dict[str, str]:
         return {"string_agg": "STRING_AGG"}
@@ -74,3 +122,4 @@ class PostgresBackend(Backend):
             self._conn.close()
             self._conn = None
             self._conn_str = None
+            self._in_tx = False

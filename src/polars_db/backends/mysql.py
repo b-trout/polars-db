@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
@@ -11,6 +12,8 @@ import sqlglot.expressions as exp
 from polars_db.backends.base import Backend
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from pymysql.connections import Connection
 
 
@@ -20,6 +23,7 @@ class MySQLBackend(Backend):
     def __init__(self) -> None:
         self._conn: Connection | None = None
         self._conn_str: str | None = None
+        self._in_tx: bool = False
 
     @property
     def dialect(self) -> str:
@@ -29,7 +33,12 @@ class MySQLBackend(Backend):
         conn = self._get_connection(conn_str)
         cursor = conn.cursor()
         cursor.execute(sql)
-        conn.commit()
+        # Per-statement commit normally preserves the historical
+        # autocommit-like semantics. Inside a ``transaction()`` block
+        # the outer context commits/rolls back as a whole, so skip the
+        # per-statement commit to keep the snapshot intact.
+        if not self._in_tx:
+            conn.commit()
         columns = [desc[0] for desc in cursor.description] if cursor.description else []
         rows = cursor.fetchall() if columns else []
         if not columns:
@@ -41,6 +50,34 @@ class MySQLBackend(Backend):
                 col_data[col_name].append(value)
 
         return pa.table(col_data)
+
+    @contextmanager
+    def transaction(self, conn_str: str) -> Iterator[None]:
+        """Open a REPEATABLE READ MySQL transaction on the cached connection.
+
+        InnoDB's default isolation level is already REPEATABLE READ, but
+        we set it explicitly so the contract is dialect-portable and not
+        a function of the server's ``tx_isolation`` global. See ADR-0017
+        for the TOCTOU rationale.
+        """
+        conn = self._get_connection(conn_str)
+        cursor = conn.cursor()
+        try:
+            # ``SET TRANSACTION`` applies to the *next* tx when issued
+            # outside one; ``START TRANSACTION`` then opens that tx.
+            cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+            cursor.execute("START TRANSACTION")
+        finally:
+            cursor.close()
+        self._in_tx = True
+        try:
+            yield
+            conn.commit()
+        except BaseException:
+            conn.rollback()
+            raise
+        finally:
+            self._in_tx = False
 
     def _get_connection(self, conn_str: str) -> Connection:
         if self._conn is None or self._conn_str != conn_str:
@@ -74,3 +111,4 @@ class MySQLBackend(Backend):
             self._conn.close()
             self._conn = None
             self._conn_str = None
+            self._in_tx = False

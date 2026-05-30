@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
 from polars_db.backends.base import Backend
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     import pyarrow as pa
 
 
@@ -16,6 +19,7 @@ class DuckDBBackend(Backend):
     def __init__(self) -> None:
         self._conn: object | None = None
         self._conn_str: str | None = None
+        self._in_tx: bool = False
 
     @property
     def dialect(self) -> str:
@@ -31,6 +35,26 @@ class DuckDBBackend(Backend):
             # DDL statements don't produce results
             return pyarrow.table({})
         return result.fetch_arrow_table()
+
+    @contextmanager
+    def transaction(self, conn_str: str) -> Iterator[None]:
+        """Open a DuckDB transaction on the cached connection.
+
+        DuckDB's default isolation is snapshot, so a plain
+        ``BEGIN TRANSACTION`` is sufficient to give JoinValidator and
+        the main query a consistent view. See ADR-0017.
+        """
+        conn = self._get_connection(conn_str)
+        conn.execute("BEGIN TRANSACTION")  # type: ignore[union-attr]
+        self._in_tx = True
+        try:
+            yield
+            conn.execute("COMMIT")  # type: ignore[union-attr]
+        except BaseException:
+            conn.execute("ROLLBACK")  # type: ignore[union-attr]
+            raise
+        finally:
+            self._in_tx = False
 
     def _get_connection(self, conn_str: str) -> object:
         """Lazy-initialise the DuckDB connection."""
@@ -63,3 +87,4 @@ class DuckDBBackend(Backend):
             self._conn.close()  # type: ignore[union-attr]
             self._conn = None
             self._conn_str = None
+            self._in_tx = False
