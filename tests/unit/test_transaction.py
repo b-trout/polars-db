@@ -116,10 +116,13 @@ class RecordingBackend(Backend):
 
 def _connection_with(backend: Backend) -> Connection:
     """Build a Connection wired to *backend* with a pre-warmed schema cache."""
+    import time
+
     conn = Connection("fake://x", backend=backend)
+    now = time.monotonic()
     conn._schema_cache = {
-        "users": ["id", "user_id"],
-        "orders": ["id", "user_id"],
+        "users": (now, ["id", "user_id"]),
+        "orders": (now, ["id", "user_id"]),
     }
     return conn
 
