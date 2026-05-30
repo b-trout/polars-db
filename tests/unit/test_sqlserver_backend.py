@@ -1,7 +1,9 @@
 """Unit tests for the SQL Server backend helpers.
 
 These tests focus on pure helpers that do not require ``pymssql`` to be
-installed (the driver is an optional extra).
+installed (the driver is an optional extra). Driver-touching
+behaviour (the actual auto-create race resolution) is covered in
+``tests/integration/test_sqlserver_create_race.py``.
 """
 
 from __future__ import annotations
@@ -9,7 +11,12 @@ from __future__ import annotations
 import pytest
 
 import polars_db as pdb
-from polars_db.backends.sqlserver import SQLServerBackend, _validate_db_identifier
+from polars_db.backends.sqlserver import (
+    SQLServerBackend,
+    _is_db_not_found,
+    _mssql_error_code,
+    _validate_db_identifier,
+)
 from polars_db.connection import detect_backend
 
 
@@ -101,3 +108,45 @@ def test_connect_mssql_create_if_missing_true() -> None:
     conn = pdb.connect("mssql://sa:pw@localhost:1433/testdb", create_if_missing=True)
     assert isinstance(conn.backend, SQLServerBackend)
     assert conn.backend._create_if_missing is True
+
+
+# ---------------------------------------------------------------------------
+# Race-resolution helpers (ADR-0013 update)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_mssql_error_code_extracts_first_arg() -> None:
+    """pymssql wraps the DB-Lib error number in ``exc.args[0]`` — the
+    helper must return that as an int."""
+
+    class _FakeError(Exception):
+        pass
+
+    assert _mssql_error_code(_FakeError(1801, b"already exists")) == 1801
+
+
+@pytest.mark.unit
+def test_mssql_error_code_returns_none_for_non_numeric_args() -> None:
+    """An exception with no int code (e.g. a plain message) must return
+    ``None`` so the caller's ``code in {...}`` checks short-circuit
+    cleanly."""
+
+    class _FakeError(Exception):
+        pass
+
+    assert _mssql_error_code(_FakeError("not a code")) is None
+    assert _mssql_error_code(_FakeError()) is None
+
+
+@pytest.mark.unit
+def test_is_db_not_found_matches_4060_and_4063() -> None:
+    """Race-resolution must recognise both "cannot open database" codes."""
+
+    class _FakeError(Exception):
+        pass
+
+    assert _is_db_not_found(_FakeError(4060, b"...")) is True
+    assert _is_db_not_found(_FakeError(4063, b"...")) is True
+    assert _is_db_not_found(_FakeError(1801, b"...")) is False
+    assert _is_db_not_found(_FakeError("no code")) is False

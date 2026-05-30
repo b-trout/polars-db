@@ -22,6 +22,21 @@ if TYPE_CHECKING:
 
 _VALID_DB_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}")
 
+# SQL Server error codes used by the auto-create race resolution.
+#
+# 4060 / 4063 — "Cannot open database ..." Raised when the target
+#        database does not exist (or the login lacks access). With
+#        ``create_if_missing=True``, this signals that a competing
+#        writer dropped the target between our master CREATE step and
+#        our follow-up connect, so we retry the master step once.
+#
+# Note: pymssql's "race during CREATE DATABASE" surface is not a
+# specific error code — empirically it shows up as either 1801 or the
+# generic ``(0, b'Unknown error')`` DB-Lib wrapper, so
+# :meth:`SQLServerBackend._ensure_database_exists` uses outcome-based
+# detection (``DB_ID`` lookup) instead of matching error numbers.
+_DB_NOT_FOUND_CODES = (4060, 4063)
+
 
 def _validate_db_identifier(name: str) -> str:
     """Validate a SQL Server database identifier for safe DDL embedding.
@@ -35,6 +50,22 @@ def _validate_db_identifier(name: str) -> str:
         msg = f"Invalid SQL Server database name: {name!r}"
         raise ValueError(msg)
     return name
+
+
+def _mssql_error_code(exc: BaseException) -> int | None:
+    """Return the SQL Server error code from a pymssql exception, if present.
+
+    pymssql wraps the underlying DB-Lib error number in ``exc.args[0]``.
+    """
+    args = getattr(exc, "args", ())
+    if args and isinstance(args[0], int):
+        return args[0]
+    return None
+
+
+def _is_db_not_found(exc: BaseException) -> bool:
+    """Whether *exc* is a SQL Server "database not found" (4060/4063) error."""
+    return _mssql_error_code(exc) in _DB_NOT_FOUND_CODES
 
 
 class SQLServerBackend(Backend):
@@ -136,32 +167,139 @@ class SQLServerBackend(Backend):
         database = _validate_db_identifier(parsed.path.lstrip("/"))
 
         if self._create_if_missing:
-            # Ensure the target database exists.
-            # database is regex-restricted above, but apply T-SQL escaping as
-            # defence-in-depth: ] -> ]] inside brackets and ' -> '' inside strings.
-            bracketed = database.replace("]", "]]")
-            quoted = database.replace("'", "''")
-            master = pymssql.connect(
+            self._ensure_database_exists(
+                pymssql, server, port, user, password, database
+            )
+
+        try:
+            return pymssql.connect(
                 server=server,
                 port=port,
                 user=user,
                 password=password,
-                database="master",
+                database=database,
             )
+        except Exception as exc:
+            # If the target DB vanished between our master-CREATE step
+            # and this connect (a competing process dropped it), retry
+            # the master step exactly once. With ``create_if_missing=False``
+            # the original error is the right thing to surface.
+            if not (self._create_if_missing and _is_db_not_found(exc)):
+                raise
+            self._ensure_database_exists(
+                pymssql, server, port, user, password, database
+            )
+            return pymssql.connect(
+                server=server,
+                port=port,
+                user=user,
+                password=password,
+                database=database,
+            )
+
+    @staticmethod
+    def _ensure_database_exists(
+        pymssql: object,
+        server: str,
+        port: str,
+        user: str,
+        password: str,
+        database: str,
+    ) -> None:
+        """Idempotently create *database* via the master connection.
+
+        The ``IF DB_ID(...) IS NULL CREATE DATABASE`` form is itself
+        racy under concurrency: two callers can both see ``NULL`` and
+        one will get an error from the engine. Empirically pymssql
+        surfaces this race as either error 1801 ("database already
+        exists") or the generic ``(0, b'Unknown error')`` DB-Lib
+        wrapper — the latter has no programmable code so matching on
+        error numbers is not reliable.
+
+        We use outcome-based detection instead: if the CREATE step
+        raises, query ``DB_ID`` again and proceed when the database
+        now exists (some other writer won the race; the end state is
+        what we wanted). Any other failure mode re-raises. See
+        ADR-0013 for the full rationale.
+
+        ``database`` is regex-restricted by :func:`_validate_db_identifier`,
+        but apply T-SQL escaping as defence-in-depth: ``]`` -> ``]]``
+        inside brackets and ``'`` -> ``''`` inside strings.
+        """
+        bracketed = database.replace("]", "]]")
+        quoted = database.replace("'", "''")
+
+        if SQLServerBackend._database_exists(
+            pymssql, server, port, user, password, quoted
+        ):
+            return
+
+        try:
+            SQLServerBackend._issue_create_database(
+                pymssql, server, port, user, password, quoted, bracketed
+            )
+        except Exception:
+            if not SQLServerBackend._database_exists(
+                pymssql, server, port, user, password, quoted
+            ):
+                raise
+
+    @staticmethod
+    def _database_exists(
+        pymssql: object,
+        server: str,
+        port: str,
+        user: str,
+        password: str,
+        quoted: str,
+    ) -> bool:
+        """Whether ``DB_ID(<database>)`` is non-NULL right now.
+
+        Uses a dedicated short-lived master connection so a previous
+        failed CREATE on a different connection cannot leave the
+        cursor in a bad state.
+        """
+        master = pymssql.connect(  # type: ignore[attr-defined]
+            server=server,
+            port=port,
+            user=user,
+            password=password,
+            database="master",
+        )
+        try:
+            cursor = master.cursor()
+            cursor.execute(f"SELECT DB_ID('{quoted}')")
+            row = cursor.fetchone()
+            return bool(row) and row[0] is not None
+        finally:
+            master.close()
+
+    @staticmethod
+    def _issue_create_database(
+        pymssql: object,
+        server: str,
+        port: str,
+        user: str,
+        password: str,
+        quoted: str,
+        bracketed: str,
+    ) -> None:
+        """Run the IF DB_ID/CREATE DATABASE statement on a fresh master conn."""
+        master = pymssql.connect(  # type: ignore[attr-defined]
+            server=server,
+            port=port,
+            user=user,
+            password=password,
+            database="master",
+        )
+        try:
             master.autocommit(True)
             cursor = master.cursor()
             cursor.execute(
                 f"IF DB_ID('{quoted}') IS NULL CREATE DATABASE [{bracketed}]"
             )
+        finally:
             master.close()
-
-        return pymssql.connect(
-            server=server,
-            port=port,
-            user=user,
-            password=password,
-            database=database,
-        )
 
     def render(self, ast: exp.Expression) -> str:
         """Render AST to T-SQL, adding OFFSET 0 ROWS to subquery ORDER BY.
