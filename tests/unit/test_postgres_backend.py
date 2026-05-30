@@ -121,8 +121,10 @@ def test_close_releases_cached_connection() -> None:
 
     backend.close()
     conn.close.assert_called_once()
-    assert backend._conn is None
-    assert backend._conn_str is None
+    # After close() the per-thread cache is empty — the next call would
+    # have to open a fresh connection.
+    assert backend._state.conn is None
+    assert backend._state.conn_str is None
 
 
 @pytest.mark.unit

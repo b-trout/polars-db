@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 import pyarrow as pa
 import sqlglot.expressions as exp
 
+from polars_db.backends._thread_local import PerThreadConnections
 from polars_db.backends.base import Backend
 from polars_db.exceptions import BackendNotSupportedError
 
@@ -37,13 +38,16 @@ def _validate_db_identifier(name: str) -> str:
 
 
 class SQLServerBackend(Backend):
-    """SQL Server via native pymssql driver."""
+    """SQL Server via native pymssql driver.
+
+    Per-thread connection caching (ADR-0019) gives each thread its own
+    pymssql connection so concurrent ``collect()`` calls cannot
+    cross-contaminate cursor state.
+    """
 
     def __init__(self, *, create_if_missing: bool = False) -> None:
-        self._conn: Connection | None = None
-        self._conn_str: str | None = None
+        self._state = PerThreadConnections()
         self._create_if_missing = create_if_missing
-        self._in_tx: bool = False
 
     @property
     def dialect(self) -> str:
@@ -59,7 +63,7 @@ class SQLServerBackend(Backend):
         # autocommit-like semantics. Inside a ``transaction()`` block
         # the outer context commits/rolls back as a whole, so skip the
         # per-statement commit to keep the snapshot intact.
-        if not self._in_tx:
+        if not self._state.in_tx:
             conn.commit()
         if not columns:
             return pa.table({})
@@ -100,7 +104,7 @@ class SQLServerBackend(Backend):
             cursor.execute("SAVE TRANSACTION polars_db_sp")
         finally:
             cursor.close()
-        self._in_tx = True
+        self._state.in_tx = True
         try:
             yield
         except BaseException:
@@ -111,7 +115,7 @@ class SQLServerBackend(Backend):
                 cursor.close()
             raise
         finally:
-            self._in_tx = False
+            self._state.in_tx = False
             # Flush the surrounding implicit tx — on success this
             # commits the body's writes; on failure it commits the
             # (now empty) tx state left after the savepoint rollback so
@@ -119,11 +123,7 @@ class SQLServerBackend(Backend):
             conn.commit()
 
     def _get_connection(self, conn_str: str) -> Connection:
-        if self._conn is None or self._conn_str != conn_str:
-            self.close()
-            self._conn = self._create_connection(conn_str)
-            self._conn_str = conn_str
-        return self._conn
+        return self._state.get_or_create(conn_str, self._create_connection)
 
     def _create_connection(self, conn_str: str) -> Connection:
         import pymssql
@@ -196,8 +196,4 @@ class SQLServerBackend(Backend):
         raise BackendNotSupportedError(msg)
 
     def close(self) -> None:
-        if self._conn is not None:
-            self._conn.close()
-            self._conn = None
-            self._conn_str = None
-            self._in_tx = False
+        self._state.close_all()
