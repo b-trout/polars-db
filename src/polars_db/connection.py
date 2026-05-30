@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlparse, urlunparse
 
 if TYPE_CHECKING:
+    from contextlib import AbstractContextManager
+
     import polars as pl
 
     from polars_db.backends.base import Backend
@@ -71,6 +73,17 @@ class Connection:
             external input via string concatenation.
         """
         return self.execute(sql)
+
+    def transaction(self) -> AbstractContextManager[None]:
+        """Open a backend transaction so subsequent calls share a snapshot.
+
+        Delegates to :meth:`polars_db.backends.base.Backend.transaction`.
+        Used by :meth:`LazyFrame.collect` to make JOIN validation and the
+        main query observe the same database state (ADR-0017). Callers
+        running multi-step ``execute_raw`` sequences that must be atomic
+        can use this context manager directly.
+        """
+        return self.backend.transaction(self._conn_str)
 
     # -- schema cache --------------------------------------------------------
 

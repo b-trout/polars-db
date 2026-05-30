@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
 from polars_db.backends.base import Backend
 from polars_db.exceptions import BackendNotSupportedError
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     import pyarrow as pa
     from adbc_driver_manager.dbapi import Connection as ADBCConnection
 
@@ -31,6 +34,7 @@ class SQLiteBackend(Backend):
     def __init__(self) -> None:
         self._conn: ADBCConnection | None = None
         self._conn_str: str | None = None
+        self._in_tx: bool = False
 
     @property
     def dialect(self) -> str:
@@ -47,6 +51,33 @@ class SQLiteBackend(Backend):
             return cursor.fetch_arrow_table()
         finally:
             cursor.close()
+
+    @contextmanager
+    def transaction(self, conn_str: str) -> Iterator[None]:
+        """Open a deferred SQLite transaction on the cached connection.
+
+        SQLite's default isolation is serializable (single-writer, MVCC
+        readers in WAL mode), so a plain ``BEGIN`` is sufficient to give
+        JoinValidator and the main query a consistent snapshot — closing
+        the TOCTOU gap documented in ADR-0017.
+        """
+        conn = self._get_connection(conn_str)
+        conn.set_autocommit(False)
+        cursor = conn.cursor()
+        try:
+            cursor.execute("BEGIN")
+        finally:
+            cursor.close()
+        self._in_tx = True
+        try:
+            yield
+            conn.commit()
+        except BaseException:
+            conn.rollback()
+            raise
+        finally:
+            self._in_tx = False
+            conn.set_autocommit(True)
 
     def _get_connection(self, conn_str: str) -> ADBCConnection:
         if self._conn is None or self._conn_str != conn_str:
@@ -76,6 +107,7 @@ class SQLiteBackend(Backend):
             self._conn.close()
             self._conn = None
             self._conn_str = None
+            self._in_tx = False
 
 
 def _extract_sqlite_path(conn_str: str) -> str:

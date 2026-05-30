@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
 from polars_db.backends.base import Backend
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     import pyarrow as pa
     from adbc_driver_manager.dbapi import Connection as ADBCConnection
 
@@ -32,6 +35,7 @@ class PostgresBackend(Backend):
     def __init__(self) -> None:
         self._conn: ADBCConnection | None = None
         self._conn_str: str | None = None
+        self._in_tx: bool = False
 
     @property
     def dialect(self) -> str:
@@ -48,6 +52,35 @@ class PostgresBackend(Backend):
             return cursor.fetch_arrow_table()
         finally:
             cursor.close()
+
+    @contextmanager
+    def transaction(self, conn_str: str) -> Iterator[None]:
+        """Open a REPEATABLE READ transaction on the cached connection.
+
+        The default ADBC connection is ``autocommit=True`` so each
+        ``execute_sql`` is its own transaction. Inside this block we
+        flip autocommit off and explicitly ``BEGIN ISOLATION LEVEL
+        REPEATABLE READ``; the JoinValidator's pre-check and the main
+        query then observe the same snapshot, closing the TOCTOU gap
+        documented in ADR-0017.
+        """
+        conn = self._get_connection(conn_str)
+        conn.set_autocommit(False)
+        cursor = conn.cursor()
+        try:
+            cursor.execute("BEGIN ISOLATION LEVEL REPEATABLE READ")
+        finally:
+            cursor.close()
+        self._in_tx = True
+        try:
+            yield
+            conn.commit()
+        except BaseException:
+            conn.rollback()
+            raise
+        finally:
+            self._in_tx = False
+            conn.set_autocommit(True)
 
     def _get_connection(self, conn_str: str) -> ADBCConnection:
         if self._conn is None or self._conn_str != conn_str:
@@ -74,3 +107,4 @@ class PostgresBackend(Backend):
             self._conn.close()
             self._conn = None
             self._conn_str = None
+            self._in_tx = False

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+import warnings
+from typing import TYPE_CHECKING
 
 from polars_db.compiler.optimizer import Optimizer
 from polars_db.compiler.query_compiler import QueryCompiler
@@ -160,10 +161,25 @@ class LazyFrame:
     # -- execution -----------------------------------------------------------
 
     def collect(self) -> pl.DataFrame:
-        """Compile, execute, and return a ``polars.DataFrame``."""
-        self._run_validations()
-        sql = self._compile()
-        return self._conn.execute(sql)
+        """Compile, execute, and return a ``polars.DataFrame``.
+
+        When the query contains JOIN operations with a non-default
+        ``validate`` setting, the validation query and the main query are
+        wrapped in a single backend transaction so they observe the same
+        snapshot. Without the wrapper a concurrent INSERT could violate
+        the cardinality constraint between the two reads (ADR-0017).
+        Backends whose drivers do not provide cross-statement atomicity
+        (currently BigQuery) skip the validation with a warning rather
+        than emit a falsely-confident result.
+        """
+        validating_joins = self._validating_joins()
+        if not validating_joins:
+            sql = self._compile()
+            return self._conn.execute(sql)
+        with self._conn.transaction():
+            self._run_validations(validating_joins)
+            sql = self._compile()
+            return self._conn.execute(sql)
 
     def show_query(self) -> str:
         """Return the generated SQL string."""
@@ -188,14 +204,36 @@ class LazyFrame:
         optimized = Optimizer().optimize(ast)
         return self._conn.backend.render(optimized)
 
-    def _run_validations(self) -> None:
-        """Execute JOIN cardinality validation queries if needed."""
+    def _validating_joins(self) -> list[JoinOp]:
+        """Return JoinOps in the tree whose ``validate`` is not ``"m:m"``."""
+        return [j for j in self._find_join_ops(self._op) if j.validate != "m:m"]
+
+    def _run_validations(self, joins: list[JoinOp]) -> None:
+        """Execute JOIN cardinality validation queries for *joins*.
+
+        Must be called from inside a :meth:`Connection.transaction` block
+        on backends that support atomic validation, so the uniqueness
+        check and the main query share a snapshot. Backends without
+        cross-statement atomicity (``supports_atomic_validation == False``)
+        emit a warning and skip validation entirely — running it
+        sequentially would give callers false confidence.
+        """
         from polars_db.compiler.optimizer import JoinValidator
         from polars_db.exceptions import JoinValidationError
 
+        if not self._conn.backend.supports_atomic_validation:
+            warnings.warn(
+                f"{type(self._conn.backend).__name__} does not support atomic "
+                "JOIN validation; skipping the cardinality check. Use "
+                "validate='m:m' or rely on database-level UNIQUE constraints "
+                "(see ADR-0017).",
+                stacklevel=3,
+            )
+            return
+
         compiler = QueryCompiler(self._conn.backend, self._conn)
         validator = JoinValidator()
-        for join_op in self._find_join_ops(self._op):
+        for join_op in joins:
             for vq in validator.build_validation_queries(join_op, compiler):
                 result = self._conn.execute(vq)
                 if len(result) > 0:
@@ -203,9 +241,9 @@ class LazyFrame:
                     raise JoinValidationError(msg)
 
     @staticmethod
-    def _find_join_ops(op: Op) -> list[Any]:
+    def _find_join_ops(op: Op) -> list[JoinOp]:
         """Collect all JoinOp nodes in the tree."""
-        result: list[Any] = []
+        result: list[JoinOp] = []
         if isinstance(op, JoinOp):
             result.append(op)
             result.extend(LazyFrame._find_join_ops(op.left))

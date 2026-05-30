@@ -17,7 +17,14 @@ if TYPE_CHECKING:
 
 
 class BigQueryBackend(Backend):
-    """BigQuery via google-cloud-bigquery client."""
+    """BigQuery via google-cloud-bigquery client.
+
+    .. note::
+        BigQuery does not support cross-job snapshot isolation through
+        the standard ``client.query()`` API. :attr:`supports_atomic_validation`
+        is therefore ``False`` — see ADR-0017 for the trade-off and how
+        :meth:`polars_db.lazy_frame.LazyFrame._run_validations` reacts to it.
+    """
 
     def __init__(self) -> None:
         self._client: Client | None = None
@@ -26,6 +33,10 @@ class BigQueryBackend(Backend):
     @property
     def dialect(self) -> str:
         return "bigquery"
+
+    @property
+    def supports_atomic_validation(self) -> bool:
+        return False
 
     _DML_PREFIXES = ("INSERT", "UPDATE", "DELETE", "MERGE", "CREATE", "DROP", "ALTER")
 
