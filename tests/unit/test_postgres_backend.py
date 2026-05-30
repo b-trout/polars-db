@@ -126,11 +126,13 @@ def test_close_releases_cached_connection() -> None:
 
 
 @pytest.mark.unit
-def test_create_connection_calls_adbc_with_autocommit() -> None:
+def test_create_connection_calls_adbc_with_default_autocommit() -> None:
     """``_create_connection`` must delegate to
-    ``adbc_driver_postgresql.dbapi.connect`` with ``autocommit=True`` so
-    that DDL/DML callers see the same "one statement = one transaction"
-    semantics they had under psycopg2."""
+    ``adbc_driver_postgresql.dbapi.connect`` with the DBAPI-default
+    ``autocommit=False``. ``execute_sql`` then explicitly commits per
+    statement (suppressed inside ``transaction()``) so the snapshot
+    boundary is controllable — see ADR-0017 for why the original
+    ``autocommit=True`` + mid-session toggle design was reverted."""
     fake_mod = MagicMock()
     fake_mod.connect.return_value = "conn-sentinel"
 
@@ -152,6 +154,4 @@ def test_create_connection_calls_adbc_with_autocommit() -> None:
         result = PostgresBackend._create_connection("postgresql://u:p@host/db")
 
     assert result == "conn-sentinel"
-    fake_mod.connect.assert_called_once_with(
-        "postgresql://u:p@host/db", autocommit=True
-    )
+    fake_mod.connect.assert_called_once_with("postgresql://u:p@host/db")

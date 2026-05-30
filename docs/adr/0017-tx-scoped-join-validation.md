@@ -110,3 +110,63 @@ We considered two alternatives and rejected both:
 - This ADR closes one of the four TOCTOU sites flagged in the
   2026-05-30 audit. Sister ADRs (0018 schema-cache TTL, 0013 update,
   0019 backend thread safety) address the others.
+
+## Revision 2026-05-30 — implementation note: ADBC autocommit toggle is unreliable
+
+The first implementation kept the ADBC connections in
+``autocommit=True`` mode (matching the historical psycopg2 semantics)
+and used ``conn.adbc_connection.set_autocommit(False)`` to enter the
+tx, an explicit ``BEGIN ISOLATION LEVEL …`` / ``BEGIN`` to set
+isolation, ``conn.commit()`` / ``rollback()`` on exit, and a
+``set_autocommit(True)`` to restore. Integration CI surfaced two
+problems with that design that the unit (mock) tests could not see:
+
+1. The dbapi wrapper does not re-expose ``set_autocommit`` — the call
+   must be routed through the low-level ``conn.adbc_connection``
+   handle. The unit suite happily accepted ``conn.set_autocommit`` on a
+   ``MagicMock``; the real driver raised ``AttributeError`` (the
+   driving motivation for the *avoid mocks* feedback memory).
+2. Even via the correct handle, the mid-session ``set_autocommit``
+   toggle is not honoured uniformly across drivers. On SQLite ADBC,
+   flipping autocommit off and then calling ``rollback()`` does **not**
+   undo statements issued during that window (verified empirically:
+   ``set_autocommit(False)`` followed by INSERT and ``rollback()``
+   leaves the row visible). Postgres ADBC's behaviour was not
+   confidently characterisable without a live server, so the same
+   pattern was applied there for safety.
+
+### Revised design
+
+Each ADBC backend now opens its connection in DBAPI-default
+``autocommit=False`` and ``execute_sql`` calls ``conn.commit()`` after
+every statement when ``self._in_tx`` is false. This matches what
+``MySQLBackend`` and ``SQLServerBackend`` already do and preserves the
+historical "one statement = one transaction" externally-visible
+semantics. ``transaction()`` simply flips ``_in_tx`` true, optionally
+issues the isolation-level SET statement (Postgres only — SQLite
+defaults to serializable), runs the body, and commits or rolls back at
+the end. No autocommit toggling, no driver-specific quirk to depend on.
+
+### Isolation level table (revised)
+
+| Backend     | Open                                                   | Rationale                                          |
+|-------------|--------------------------------------------------------|----------------------------------------------------|
+| PostgreSQL  | `SET TRANSACTION ISOLATION LEVEL REPEATABLE READ` then queries | Default is READ COMMITTED — too weak for snapshot. |
+| SQLite      | _no isolation statement_                               | Default is serializable; queries run inside the implicit tx. |
+| MySQL       | `SET TRANSACTION ISOLATION LEVEL REPEATABLE READ; START TRANSACTION` | InnoDB default is already REPEATABLE READ; set explicitly so the contract is dialect-portable. |
+| SQL Server  | `SET TRANSACTION ISOLATION LEVEL SERIALIZABLE; BEGIN TRANSACTION` | Default is READ COMMITTED — too weak.              |
+| DuckDB      | `BEGIN TRANSACTION`                                    | Snapshot isolation by default.                     |
+| BigQuery    | No-op                                                  | See above.                                         |
+
+### Consequence
+
+- The autocommit kwarg passed historically to
+  ``adbc_pg.connect(conn_str, autocommit=True)`` is removed in favour of
+  the DBAPI default. The unit assertion was relaxed accordingly.
+- The contract surface (``Backend.transaction()`` returning a context
+  manager, ``supports_atomic_validation``, ``Connection.transaction()``
+  delegation) is unchanged. Only the internal mechanism changed.
+- Driver-touching coverage now lives in
+  ``tests/integration/test_transaction.py`` so the per-backend matrix
+  exercises real BEGIN/COMMIT/ROLLBACK round-trips — see the
+  *avoid mocks* memory entry for why this matters.
