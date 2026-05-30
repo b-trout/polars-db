@@ -17,7 +17,7 @@ dynamic = ["version"]
 description = "Query databases using Polars syntax — the Python equivalent of R's dbplyr"
 readme = "README.md"
 license = "MIT"
-requires-python = ">=3.13"
+requires-python = ">=3.11"
 authors = [{ name = "b-trout" }]
 keywords = ["polars", "sql", "database", "query-builder", "dataframe", "dbplyr"]
 classifiers = [
@@ -26,6 +26,8 @@ classifiers = [
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Topic :: Database",
     "Topic :: Scientific/Engineering",
@@ -139,7 +141,7 @@ sequence = ["format-check", "lint", "type-check", "yaml-format-check", "yaml-lin
 # --- Ruff -----------------------------------------------------------------
 
 [tool.ruff]
-target-version = "py313"
+target-version = "py311"
 line-length = 88
 src = ["src", "tests"]
 

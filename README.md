@@ -1,7 +1,7 @@
 # polars-db
 
 [![CI](https://github.com/b-trout/polars-db/actions/workflows/pr-check.yml/badge.svg)](https://github.com/b-trout/polars-db/actions/workflows/pr-check.yml)
-[![Python 3.13+](https://img.shields.io/badge/python-3.13%2B-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![codecov](https://codecov.io/gh/b-trout/polars-db/branch/main/graph/badge.svg)](https://codecov.io/gh/b-trout/polars-db)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -190,7 +190,7 @@ conn.execute_raw("DROP TABLE IF EXISTS users")
 
 ### Prerequisites
 
-- Python 3.13+
+- Python 3.11+
 - [uv](https://docs.astral.sh/uv/)
 - Docker (for integration tests)
 
