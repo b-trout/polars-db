@@ -57,24 +57,28 @@ def test_supports_atomic_validation(backend_cls: type, expected: bool) -> None:
 
 
 @pytest.mark.unit
-def test_postgres_transaction_begins_with_repeatable_read() -> None:
-    """Postgres tx must flip autocommit off and BEGIN with REPEATABLE READ."""
+def test_postgres_transaction_sets_repeatable_read_via_adbc_handle() -> None:
+    """Postgres tx flips autocommit on the low-level ADBC handle (the dbapi
+    Connection wrapper does not re-expose ``set_autocommit``) and sets
+    REPEATABLE READ as the first statement of the implicit tx."""
     cursor = MagicMock()
     conn = MagicMock()
     conn.cursor.return_value = cursor
 
     backend = PostgresBackend()
-    with patch.object(
-        PostgresBackend, "_create_connection", staticmethod(lambda _cs: conn)
+    with (
+        patch.object(
+            PostgresBackend, "_create_connection", staticmethod(lambda _cs: conn)
+        ),
+        backend.transaction("postgresql://x"),
     ):
-        with backend.transaction("postgresql://x"):
-            assert backend._in_tx is True
-        assert backend._in_tx is False
+        assert backend._in_tx is True
+    assert backend._in_tx is False
 
-    # autocommit toggled off then restored
-    conn.set_autocommit.assert_any_call(False)
-    conn.set_autocommit.assert_any_call(True)
-    cursor.execute.assert_called_with("BEGIN ISOLATION LEVEL REPEATABLE READ")
+    # autocommit toggled off then restored on the low-level handle
+    conn.adbc_connection.set_autocommit.assert_any_call(False)
+    conn.adbc_connection.set_autocommit.assert_any_call(True)
+    cursor.execute.assert_called_with("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
     conn.commit.assert_called_once()
     conn.rollback.assert_not_called()
 
@@ -97,17 +101,17 @@ def test_postgres_transaction_rolls_back_on_exception() -> None:
 
     conn.rollback.assert_called_once()
     conn.commit.assert_not_called()
-    # autocommit must still be restored
-    conn.set_autocommit.assert_any_call(True)
+    # autocommit must still be restored on the low-level handle
+    conn.adbc_connection.set_autocommit.assert_any_call(True)
     assert backend._in_tx is False
 
 
 @pytest.mark.unit
-def test_sqlite_transaction_begins_plain() -> None:
-    """SQLite tx uses plain BEGIN (default isolation is serializable)."""
-    cursor = MagicMock()
+def test_sqlite_transaction_toggles_autocommit_on_adbc_handle() -> None:
+    """SQLite tx flips autocommit off via the low-level ADBC handle; the
+    driver opens the implicit tx on the first query (no explicit BEGIN
+    needed in autocommit-off mode)."""
     conn = MagicMock()
-    conn.cursor.return_value = cursor
 
     backend = SQLiteBackend()
     with (
@@ -118,7 +122,8 @@ def test_sqlite_transaction_begins_plain() -> None:
     ):
         pass
 
-    cursor.execute.assert_called_with("BEGIN")
+    conn.adbc_connection.set_autocommit.assert_any_call(False)
+    conn.adbc_connection.set_autocommit.assert_any_call(True)
     conn.commit.assert_called_once()
 
 

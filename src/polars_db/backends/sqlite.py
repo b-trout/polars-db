@@ -57,17 +57,15 @@ class SQLiteBackend(Backend):
         """Open a deferred SQLite transaction on the cached connection.
 
         SQLite's default isolation is serializable (single-writer, MVCC
-        readers in WAL mode), so a plain ``BEGIN`` is sufficient to give
-        JoinValidator and the main query a consistent snapshot — closing
-        the TOCTOU gap documented in ADR-0017.
+        readers in WAL mode). We flip ADBC autocommit off via the
+        low-level handle (the dbapi wrapper does not re-expose
+        ``set_autocommit``); the driver then opens an implicit
+        transaction on the first statement and holds it until
+        :meth:`commit`/:meth:`rollback`. Closes the TOCTOU gap
+        documented in ADR-0017.
         """
         conn = self._get_connection(conn_str)
-        conn.set_autocommit(False)
-        cursor = conn.cursor()
-        try:
-            cursor.execute("BEGIN")
-        finally:
-            cursor.close()
+        conn.adbc_connection.set_autocommit(False)
         self._in_tx = True
         try:
             yield
@@ -77,7 +75,7 @@ class SQLiteBackend(Backend):
             raise
         finally:
             self._in_tx = False
-            conn.set_autocommit(True)
+            conn.adbc_connection.set_autocommit(True)
 
     def _get_connection(self, conn_str: str) -> ADBCConnection:
         if self._conn is None or self._conn_str != conn_str:

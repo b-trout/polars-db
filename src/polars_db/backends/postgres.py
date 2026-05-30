@@ -59,16 +59,18 @@ class PostgresBackend(Backend):
 
         The default ADBC connection is ``autocommit=True`` so each
         ``execute_sql`` is its own transaction. Inside this block we
-        flip autocommit off and explicitly ``BEGIN ISOLATION LEVEL
-        REPEATABLE READ``; the JoinValidator's pre-check and the main
-        query then observe the same snapshot, closing the TOCTOU gap
+        flip autocommit off via the low-level ADBC handle (the dbapi
+        ``Connection`` wrapper does not re-expose ``set_autocommit``),
+        then set the isolation level as the first statement of the
+        implicit transaction so JoinValidator's probe and the main
+        query observe the same snapshot. Closes the TOCTOU gap
         documented in ADR-0017.
         """
         conn = self._get_connection(conn_str)
-        conn.set_autocommit(False)
+        conn.adbc_connection.set_autocommit(False)
         cursor = conn.cursor()
         try:
-            cursor.execute("BEGIN ISOLATION LEVEL REPEATABLE READ")
+            cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
         finally:
             cursor.close()
         self._in_tx = True
@@ -80,7 +82,7 @@ class PostgresBackend(Backend):
             raise
         finally:
             self._in_tx = False
-            conn.set_autocommit(True)
+            conn.adbc_connection.set_autocommit(True)
 
     def _get_connection(self, conn_str: str) -> ADBCConnection:
         if self._conn is None or self._conn_str != conn_str:
