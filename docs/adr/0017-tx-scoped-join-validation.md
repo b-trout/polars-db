@@ -154,7 +154,7 @@ the end. No autocommit toggling, no driver-specific quirk to depend on.
 | PostgreSQL  | `SET TRANSACTION ISOLATION LEVEL REPEATABLE READ` then queries | Default is READ COMMITTED — too weak for snapshot. |
 | SQLite      | _no isolation statement_                               | Default is serializable; queries run inside the implicit tx. |
 | MySQL       | `SET TRANSACTION ISOLATION LEVEL REPEATABLE READ; START TRANSACTION` | InnoDB default is already REPEATABLE READ; set explicitly so the contract is dialect-portable. |
-| SQL Server  | `SET TRANSACTION ISOLATION LEVEL SERIALIZABLE; BEGIN TRANSACTION` | Default is READ COMMITTED — too weak.              |
+| SQL Server  | `SET TRANSACTION ISOLATION LEVEL SERIALIZABLE; SAVE TRANSACTION polars_db_sp` | Default is READ COMMITTED — too weak. ``SAVE TRANSACTION`` instead of ``BEGIN TRANSACTION`` — see *Revision 2* below. |
 | DuckDB      | `BEGIN TRANSACTION`                                    | Snapshot isolation by default.                     |
 | BigQuery    | No-op                                                  | See above.                                         |
 
@@ -170,3 +170,59 @@ the end. No autocommit toggling, no driver-specific quirk to depend on.
   ``tests/integration/test_transaction.py`` so the per-backend matrix
   exercises real BEGIN/COMMIT/ROLLBACK round-trips — see the
   *avoid mocks* memory entry for why this matters.
+
+## Revision 2 — 2026-05-30 — T-SQL ROLLBACK semantics force a savepoint design
+
+SQL Server integration CI then surfaced a third surprise: with the
+per-statement-commit redesign in place, ``test_rollback_discards_writes_on_exception``
+failed for SQL Server with ``Invalid object name '_tx_rollback_sqlserver'``.
+The DDL that the test had created **before** entering ``transaction()``
+had been wiped along with the body's INSERT. Reproducing against a live
+SQL Server container with ``SELECT @@TRANCOUNT`` probes confirmed:
+
+- ``pymssql.connect(..., autocommit=False)`` (the default) issues
+  ``SET IMPLICIT_TRANSACTIONS ON``, so each DML/DDL statement starts an
+  implicit transaction and ``@@TRANCOUNT`` is kept ≥ 1 for the lifetime
+  of the session, even right after ``conn.commit()``.
+- T-SQL's ``ROLLBACK TRANSACTION`` (without a savepoint name)
+  *unconditionally* unwinds to ``@@TRANCOUNT = 0`` — it does **not**
+  step back one level of nesting. So a bare rollback from
+  ``transaction()`` tore down the surrounding implicit tx and wiped
+  state that ``execute_sql`` had already ``conn.commit()``'d before the
+  block was entered.
+
+Postgres / MySQL / SQLite / DuckDB do not have this property; their
+rollback only unwinds the currently-open tx, which is what callers
+expect.
+
+### Revised SQL Server design
+
+Use a **savepoint** instead of a nested ``BEGIN``:
+
+1. ``SET TRANSACTION ISOLATION LEVEL SERIALIZABLE`` — a session-level
+   T-SQL setting, so it affects both the currently-open implicit tx
+   and any future ones.
+2. ``SAVE TRANSACTION polars_db_sp`` — places a savepoint inside
+   pymssql's already-open implicit tx.
+3. On success: do nothing special; the body's writes live in the
+   surrounding tx, which a ``conn.commit()`` in the ``finally`` block
+   flushes.
+4. On exception: ``ROLLBACK TRANSACTION polars_db_sp`` — rewinds only
+   to the savepoint, leaving every prior commit boundary intact.
+5. ``conn.commit()`` always runs in ``finally`` so the surrounding tx
+   is closed off even after a rollback-to-savepoint, keeping
+   ``@@TRANCOUNT`` stable between successive ``transaction()`` calls.
+
+This isolates the body's effect on the database exactly the way the
+other backends' rollback already does, without depending on T-SQL
+unwinding to a specific nesting level.
+
+### Lessons logged for the *avoid mocks* memory
+
+T-SQL rollback semantics are not a property the unit suite could have
+caught even with a perfect driver mock — the bug is a property of the
+real database engine plus the real driver's tx mode. Per-backend
+integration CI is the only place this can be exercised. Recommend
+verifying any future tx-control change in
+``tests/integration/test_transaction.py`` against a live SQL Server
+container before pushing.
