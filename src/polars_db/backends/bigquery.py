@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 import pyarrow as pa
 import sqlglot.expressions as exp
 
+from polars_db.backends._thread_local import PerThreadConnections
 from polars_db.backends.base import Backend
 from polars_db.exceptions import BackendNotSupportedError
 
@@ -24,11 +25,15 @@ class BigQueryBackend(Backend):
         the standard ``client.query()`` API. :attr:`supports_atomic_validation`
         is therefore ``False`` — see ADR-0017 for the trade-off and how
         :meth:`polars_db.lazy_frame.LazyFrame._run_validations` reacts to it.
+
+    Per-thread client caching (ADR-0019) gives each thread its own
+    BigQuery ``Client`` so concurrent ``collect()`` calls do not depend
+    on the upstream library's thread-safety promises remaining intact
+    across versions.
     """
 
     def __init__(self) -> None:
-        self._client: Client | None = None
-        self._conn_str: str | None = None
+        self._state = PerThreadConnections()
 
     @property
     def dialect(self) -> str:
@@ -55,11 +60,7 @@ class BigQueryBackend(Backend):
         return result.to_arrow()
 
     def _get_client(self, conn_str: str) -> Client:
-        if self._client is None or self._conn_str != conn_str:
-            self.close()
-            self._client = self._create_client(conn_str)
-            self._conn_str = conn_str
-        return self._client
+        return self._state.get_or_create(conn_str, self._create_client)
 
     @staticmethod
     def _create_client(conn_str: str) -> Client:
@@ -119,7 +120,4 @@ class BigQueryBackend(Backend):
         raise BackendNotSupportedError(msg)
 
     def close(self) -> None:
-        if self._client is not None:
-            self._client.close()
-            self._client = None
-            self._conn_str = None
+        self._state.close_all()

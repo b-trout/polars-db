@@ -5,6 +5,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
+from polars_db.backends._thread_local import PerThreadConnections
 from polars_db.backends.base import Backend
 from polars_db.exceptions import BackendNotSupportedError
 
@@ -36,15 +37,13 @@ class SQLiteBackend(Backend):
         what MySQL / SQL Server already do), suppressing the commit
         only while inside a :meth:`transaction` block.
 
-    .. warning::
-        A single backend instance caches one connection.  The cache is
-        not thread-safe.
+    Per-thread connection caching (ADR-0019) keeps the in-memory
+    semantics correct under concurrent access: each thread gets its own
+    ``:memory:`` SQLite database when the conn string is ``sqlite:///:memory:``.
     """
 
     def __init__(self) -> None:
-        self._conn: ADBCConnection | None = None
-        self._conn_str: str | None = None
-        self._in_tx: bool = False
+        self._state = PerThreadConnections()
 
     @property
     def dialect(self) -> str:
@@ -65,7 +64,7 @@ class SQLiteBackend(Backend):
         # semantics. Inside a ``transaction()`` block the outer context
         # commits/rolls back as a whole, so skip here to keep the
         # snapshot intact (ADR-0017).
-        if not self._in_tx:
+        if not self._state.in_tx:
             conn.commit()
         return result
 
@@ -81,7 +80,7 @@ class SQLiteBackend(Backend):
         Closes the TOCTOU gap documented in ADR-0017.
         """
         conn = self._get_connection(conn_str)
-        self._in_tx = True
+        self._state.in_tx = True
         try:
             yield
             conn.commit()
@@ -89,14 +88,10 @@ class SQLiteBackend(Backend):
             conn.rollback()
             raise
         finally:
-            self._in_tx = False
+            self._state.in_tx = False
 
     def _get_connection(self, conn_str: str) -> ADBCConnection:
-        if self._conn is None or self._conn_str != conn_str:
-            self.close()
-            self._conn = self._create_connection(conn_str)
-            self._conn_str = conn_str
-        return self._conn
+        return self._state.get_or_create(conn_str, self._create_connection)
 
     @staticmethod
     def _create_connection(conn_str: str) -> ADBCConnection:
@@ -115,11 +110,7 @@ class SQLiteBackend(Backend):
         return f"EXPLAIN QUERY PLAN {sql}"
 
     def close(self) -> None:
-        if self._conn is not None:
-            self._conn.close()
-            self._conn = None
-            self._conn_str = None
-            self._in_tx = False
+        self._state.close_all()
 
 
 def _extract_sqlite_path(conn_str: str) -> str:

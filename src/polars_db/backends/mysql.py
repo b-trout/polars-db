@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 import pyarrow as pa
 import sqlglot.expressions as exp
 
+from polars_db.backends._thread_local import PerThreadConnections
 from polars_db.backends.base import Backend
 
 if TYPE_CHECKING:
@@ -18,12 +19,15 @@ if TYPE_CHECKING:
 
 
 class MySQLBackend(Backend):
-    """MySQL via native PyMySQL driver."""
+    """MySQL via native PyMySQL driver.
+
+    Per-thread connection caching (ADR-0019) gives each thread its own
+    pymysql connection so concurrent ``collect()`` calls cannot
+    cross-contaminate cursor state.
+    """
 
     def __init__(self) -> None:
-        self._conn: Connection | None = None
-        self._conn_str: str | None = None
-        self._in_tx: bool = False
+        self._state = PerThreadConnections()
 
     @property
     def dialect(self) -> str:
@@ -37,7 +41,7 @@ class MySQLBackend(Backend):
         # autocommit-like semantics. Inside a ``transaction()`` block
         # the outer context commits/rolls back as a whole, so skip the
         # per-statement commit to keep the snapshot intact.
-        if not self._in_tx:
+        if not self._state.in_tx:
             conn.commit()
         columns = [desc[0] for desc in cursor.description] if cursor.description else []
         rows = cursor.fetchall() if columns else []
@@ -69,7 +73,7 @@ class MySQLBackend(Backend):
             cursor.execute("START TRANSACTION")
         finally:
             cursor.close()
-        self._in_tx = True
+        self._state.in_tx = True
         try:
             yield
             conn.commit()
@@ -77,14 +81,10 @@ class MySQLBackend(Backend):
             conn.rollback()
             raise
         finally:
-            self._in_tx = False
+            self._state.in_tx = False
 
     def _get_connection(self, conn_str: str) -> Connection:
-        if self._conn is None or self._conn_str != conn_str:
-            self.close()
-            self._conn = self._create_connection(conn_str)
-            self._conn_str = conn_str
-        return self._conn
+        return self._state.get_or_create(conn_str, self._create_connection)
 
     @staticmethod
     def _create_connection(conn_str: str) -> Connection:
@@ -107,8 +107,4 @@ class MySQLBackend(Backend):
         return exp.Anonymous(this="DATABASE")
 
     def close(self) -> None:
-        if self._conn is not None:
-            self._conn.close()
-            self._conn = None
-            self._conn_str = None
-            self._in_tx = False
+        self._state.close_all()

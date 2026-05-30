@@ -5,6 +5,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
+from polars_db.backends._thread_local import PerThreadConnections
 from polars_db.backends.base import Backend
 
 if TYPE_CHECKING:
@@ -14,12 +15,16 @@ if TYPE_CHECKING:
 
 
 class DuckDBBackend(Backend):
-    """DuckDB via native duckdb driver."""
+    """DuckDB via native duckdb driver.
+
+    Per-thread connection caching (ADR-0019) gives each thread its own
+    duckdb connection — duckdb cursors are not concurrent-safe, so
+    sharing a single connection across threads would race even though
+    the database engine itself supports parallel reads.
+    """
 
     def __init__(self) -> None:
-        self._conn: object | None = None
-        self._conn_str: str | None = None
-        self._in_tx: bool = False
+        self._state = PerThreadConnections()
 
     @property
     def dialect(self) -> str:
@@ -46,7 +51,7 @@ class DuckDBBackend(Backend):
         """
         conn = self._get_connection(conn_str)
         conn.execute("BEGIN TRANSACTION")  # type: ignore[union-attr]
-        self._in_tx = True
+        self._state.in_tx = True
         try:
             yield
             conn.execute("COMMIT")  # type: ignore[union-attr]
@@ -54,15 +59,11 @@ class DuckDBBackend(Backend):
             conn.execute("ROLLBACK")  # type: ignore[union-attr]
             raise
         finally:
-            self._in_tx = False
+            self._state.in_tx = False
 
     def _get_connection(self, conn_str: str) -> object:
         """Lazy-initialise the DuckDB connection."""
-        if self._conn is None or self._conn_str != conn_str:
-            self.close()
-            self._conn = self._create_connection(conn_str)
-            self._conn_str = conn_str
-        return self._conn
+        return self._state.get_or_create(conn_str, self._create_connection)
 
     @staticmethod
     def _create_connection(conn_str: str) -> object:
@@ -83,8 +84,4 @@ class DuckDBBackend(Backend):
         )
 
     def close(self) -> None:
-        if self._conn is not None:
-            self._conn.close()  # type: ignore[union-attr]
-            self._conn = None
-            self._conn_str = None
-            self._in_tx = False
+        self._state.close_all()
