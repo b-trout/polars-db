@@ -78,24 +78,45 @@ class SQLServerBackend(Backend):
         SQL Server's default isolation is READ COMMITTED, which would let
         a concurrent INSERT slip in between JoinValidator and the main
         query. SERIALIZABLE provides snapshot stability for the duration
-        of the block. See ADR-0017.
+        of the block.
+
+        Uses ``SAVE TRANSACTION`` instead of a nested ``BEGIN TRANSACTION``
+        because T-SQL's ``ROLLBACK TRANSACTION`` (without a savepoint
+        name) unconditionally unwinds to ``@@TRANCOUNT = 0``. pymssql
+        runs in ``autocommit=False`` which keeps an implicit tx open
+        across statements, so a bare rollback would wipe DDL/DML that
+        had already been committed before this block was entered
+        (verified empirically — see ADR-0017 revision). Rolling back to
+        a savepoint unwinds only the body's changes, leaving the
+        surrounding tx state intact.
         """
         conn = self._get_connection(conn_str)
         cursor = conn.cursor()
         try:
+            # SQL Server's SET TRANSACTION ISOLATION LEVEL is a session
+            # setting, not a per-tx one — it affects the currently-open
+            # implicit tx as well as future ones, which is what we want.
             cursor.execute("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE")
-            cursor.execute("BEGIN TRANSACTION")
+            cursor.execute("SAVE TRANSACTION polars_db_sp")
         finally:
             cursor.close()
         self._in_tx = True
         try:
             yield
-            conn.commit()
         except BaseException:
-            conn.rollback()
+            cursor = conn.cursor()
+            try:
+                cursor.execute("ROLLBACK TRANSACTION polars_db_sp")
+            finally:
+                cursor.close()
             raise
         finally:
             self._in_tx = False
+            # Flush the surrounding implicit tx — on success this
+            # commits the body's writes; on failure it commits the
+            # (now empty) tx state left after the savepoint rollback so
+            # @@TRANCOUNT does not drift between transaction() calls.
+            conn.commit()
 
     def _get_connection(self, conn_str: str) -> Connection:
         if self._conn is None or self._conn_str != conn_str:
