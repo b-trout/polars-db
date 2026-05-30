@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.2] - 2026-05-30
+
+### Bug Fixes
+
+- Outcome-based race resolution for SQL Server auto-create (#54)([9749a1e](https://github.com/b-trout/polars-db/commit/9749a1ec1f9fc853b4cc480f33473843d5879186))
+- Wrap JoinValidator + main query in single transaction (#51)([6051eb5](https://github.com/b-trout/polars-db/commit/6051eb53355dbada855ed50a4b60aef9be63cb8b))
+
+### Features
+
+- Schema_cache_ttl on Connection / connect() (#53)([4d7368e](https://github.com/b-trout/polars-db/commit/4d7368e317734fb0c84438f57d5b9bbacae92570))
+- Per-thread connection caching for all backends (#52)([a6edf84](https://github.com/b-trout/polars-db/commit/a6edf8453903a783e4b0e51b42908c7abad3bf53))
+
+### Miscellaneous
+
+- Support Python 3.11+ and test across 3.11/3.12/3.13 (#55)([f4cc021](https://github.com/b-trout/polars-db/commit/f4cc021fea4a83f0a2658191f7e5dfcf67070cf4))
+
 ## [0.1.1] - 2026-04-18
 
 ### ⚠ Breaking Changes
